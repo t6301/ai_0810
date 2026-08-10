@@ -23,6 +23,7 @@
   const printSheet = document.querySelector("#print-sheet");
   const draftStatus = document.querySelector("#draft-status");
   const clearDraftButton = document.querySelector("#clear-draft");
+  const generateDraftButton = document.querySelector("#generate-draft");
 
   const DRAFT_KEY = "current-event-question-draft-v1";
   let sourceMode = "url";
@@ -106,17 +107,24 @@
     );
   }
 
-  function renderQuestionSlots() {
+  function renderQuestionSlots(count = 0) {
     questionGrid.innerHTML = "";
+    questionSlots = [];
 
-    for (let index = 0; index < 8; index += 1) {
+    if (count === 0) {
+      questionGrid.innerHTML = '<p class="field-help">尚未產生題目。請先完成上方命題條件，再按「產生考題草稿」。</p>';
+      return;
+    }
+
+    for (let index = 0; index < count; index += 1) {
       const slot = document.createElement("article");
       slot.className = "question-slot";
       slot.dataset.questionIndex = String(index);
       slot.innerHTML = `
         <div class="question-slot-header">
           <h3>第 ${index + 1} 題</h3>
-          <span>題幹空白時不列印</span>
+          <span data-generated-label hidden>Gemini 產生｜草稿</span>
+          <span data-empty-label>題幹空白時不列印</span>
         </div>
         <label for="question-${index}-stem">題幹</label>
         <textarea id="question-${index}-stem" data-field="stem" rows="4" placeholder="請輸入自足、可獨立閱讀的題幹。"></textarea>
@@ -159,8 +167,15 @@
       options: ["A", "B", "C", "D"].map((label) => slot.querySelector(`[data-field="option${label}"]`).value),
       answer: slot.querySelector('[data-field="answer"]').value,
       explanation: slot.querySelector('[data-field="explanation"]').value,
-      source: slot.querySelector('[data-field="source"]').value
+      source: slot.querySelector('[data-field="source"]').value,
+      generated: slot.dataset.generated === "true"
     }));
+  }
+
+  function setGeneratedState(slot, isGenerated) {
+    slot.dataset.generated = isGenerated ? "true" : "false";
+    slot.querySelector("[data-generated-label]").hidden = !isGenerated;
+    slot.querySelector("[data-empty-label]").hidden = isGenerated;
   }
 
   function restoreQuestions(questions) {
@@ -178,7 +193,23 @@
       slot.querySelector('[data-field="answer"]').value = typeof question.answer === "string" ? question.answer : "";
       slot.querySelector('[data-field="explanation"]').value = typeof question.explanation === "string" ? question.explanation : "";
       slot.querySelector('[data-field="source"]').value = typeof question.source === "string" ? question.source : "";
+      setGeneratedState(slot, question.generated === true);
     });
+  }
+
+  function hasQuestionContent(question) {
+    return Boolean(
+      question &&
+      (cleanValue(question.stem) ||
+        (Array.isArray(question.options) && question.options.some((option) => cleanValue(option))) ||
+        cleanValue(question.answer) ||
+        cleanValue(question.explanation) ||
+        cleanValue(question.source))
+    );
+  }
+
+  function cleanValue(value) {
+    return typeof value === "string" ? value.trim() : "";
   }
 
   function formatSavedTime(dateValue) {
@@ -223,6 +254,7 @@
       const savedValue = localStorage.getItem(DRAFT_KEY);
 
       if (!savedValue) {
+        renderQuestionSlots(0);
         switchSource("url", { focus: false, save: false });
         return;
       }
@@ -238,12 +270,15 @@
       questionType.value = typeof draft.questionType === "string" ? draft.questionType : "";
       questionCount.value = typeof draft.questionCount === "string" ? draft.questionCount : "";
       difficulty.value = typeof draft.difficulty === "string" ? draft.difficulty : "";
-      restoreQuestions(draft.questions);
+      const savedQuestions = Array.isArray(draft.questions) ? draft.questions.filter(hasQuestionContent) : [];
+      renderQuestionSlots(savedQuestions.length);
+      restoreQuestions(savedQuestions);
       switchSource(draft.sourceMode === "text" ? "text" : "url", { focus: false, save: false });
       updateDraftStatus("已恢復上次保存在這台裝置的草稿");
       clearDraftButton.hidden = false;
     } catch {
       localStorage.removeItem(DRAFT_KEY);
+      renderQuestionSlots(0);
       switchSource("url", { focus: false, save: false });
       updateDraftStatus("先前的草稿無法讀取，已改用空白表單。", true);
       clearDraftButton.hidden = true;
@@ -259,7 +294,7 @@
 
     window.clearTimeout(saveTimer);
     form.reset();
-    restoreQuestions([]);
+    renderQuestionSlots(0);
     newsUrl.value = "";
     newsText.value = "";
     switchSource("url", { focus: false, save: false });
@@ -331,6 +366,114 @@
     return getQuestionData().filter((question) => question.stem.trim());
   }
 
+  function isQuestionSlotEmpty(slot) {
+    return [...slot.querySelectorAll("input, textarea, select")].every((field) => !field.value.trim());
+  }
+
+  function fillGeneratedQuestions(questions) {
+    let filledCount = 0;
+
+    questions.forEach((question, questionIndex) => {
+      const slot = questionSlots[questionIndex];
+
+      if (!slot || !isQuestionSlotEmpty(slot)) {
+        return;
+      }
+
+      slot.querySelector('[data-field="stem"]').value = question.stem;
+      ["A", "B", "C", "D"].forEach((label, optionIndex) => {
+        slot.querySelector(`[data-field="option${label}"]`).value = question.options[optionIndex];
+      });
+      slot.querySelector('[data-field="answer"]').value = question.answer;
+      slot.querySelector('[data-field="explanation"]').value = question.explanation;
+      slot.querySelector('[data-field="source"]').value = question.source;
+      setGeneratedState(slot, true);
+      filledCount += 1;
+    });
+
+    return filledCount;
+  }
+
+  async function readErrorMessage(response) {
+    try {
+      const result = await response.json();
+      return typeof result.error === "string" ? result.error : "Gemini 暫時無法產生題目，請稍後再試。";
+    } catch {
+      return "Gemini 暫時無法產生題目，請稍後再試。";
+    }
+  }
+
+  async function generateQuestionDrafts() {
+    clearMessage();
+    const errorMessage = validateForm();
+
+    if (errorMessage) {
+      showMessage(errorMessage, "error");
+      return;
+    }
+
+    if (window.location.protocol === "file:") {
+      showMessage("AI 出題需要從測試網站網址開啟；直接雙擊檔案仍可編輯、保存與列印。", "error");
+      return;
+    }
+
+    const requestedCount = Number(questionCount.value);
+
+    if (questionSlots.length > 0) {
+      showMessage("目前已有題目草稿，為避免覆蓋老師修改過的內容，不會再次產生。若要重新開始，請先使用「清除目前草稿」。", "error");
+      return;
+    }
+
+    generateDraftButton.disabled = true;
+    generateDraftButton.textContent = "正在產生草稿…";
+    showMessage("Gemini 正在整理題目草稿，請稍候；請勿關閉頁面。", "success");
+
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: subject.value.trim(),
+          curriculumFocus: curriculumFocus.value.trim(),
+          newsUrl: newsUrl.value.trim(),
+          newsText: newsText.value.trim(),
+          newsTitle: newsTitle.value.trim(),
+          mediaName: mediaName.value.trim(),
+          publishDate: publishDate.value,
+          questionType: questionType.value,
+          questionCount: requestedCount,
+          difficulty: difficulty.value
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const result = await response.json();
+      if (!Array.isArray(result.questions) || result.questions.length !== requestedCount) {
+        throw new Error("Gemini 回傳的題目數量不完整，請再試一次。");
+      }
+
+      renderQuestionSlots(requestedCount);
+      const filledCount = fillGeneratedQuestions(result.questions);
+      if (filledCount !== requestedCount) {
+        renderQuestionSlots(0);
+        throw new Error("部分題格在產生期間已有內容，因此未覆蓋；請確認後再試一次。");
+      }
+
+      saveDraft();
+      showMessage(`已填入 ${filledCount} 題 Gemini 草稿。請逐題查核事實、時效、著作權、偏誤與答案唯一性。`, "success");
+      resultCard.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Gemini 暫時無法產生題目，請稍後再試。";
+      showMessage(message, "error");
+    } finally {
+      generateDraftButton.disabled = false;
+      generateDraftButton.textContent = "產生考題草稿";
+    }
+  }
+
   function buildPrintSheet(mode) {
     const questions = getFilledQuestions();
 
@@ -395,6 +538,7 @@
   window.addEventListener("afterprint", finishPrinting);
   printStudentButton.addEventListener("click", () => buildPrintSheet("student"));
   printAnswerButton.addEventListener("click", () => buildPrintSheet("answer"));
+  generateDraftButton.addEventListener("click", generateQuestionDrafts);
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -406,7 +550,7 @@
     }
 
     saveDraft();
-    showMessage(`命題條件已通過檢查。已準備 ${escapeHtml(questionCount.value)} 題的「${escapeHtml(questionType.value)}」設定，可在下方 8 個題格中編輯內容。`, "success");
+    showMessage(`命題條件已通過檢查。可按下「產生考題草稿」，請 Gemini 準備 ${escapeHtml(questionCount.value)} 題「${escapeHtml(questionType.value)}」。`, "success");
     resultCard.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
@@ -423,6 +567,6 @@
     });
   }
 
-  renderQuestionSlots();
+  renderQuestionSlots(0);
   loadDraft();
 })();

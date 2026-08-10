@@ -152,8 +152,14 @@
         </div>
 
         <div class="action-row">
-          <p><strong>提醒：</strong>本階段只準備與保存題目，不會連接 AI。</p>
-          <button class="primary-button" type="submit">檢查命題條件</button>
+          <div>
+            <p><strong>Gemini 出題：</strong>產生的內容一律是草稿，請老師逐題查核。</p>
+            <p class="field-help">金鑰安全存放在 Vercel 的秘密設定，這個瀏覽器不會保存或顯示金鑰。</p>
+          </div>
+          <div class="result-actions">
+            <button class="secondary-button" type="submit">檢查命題條件</button>
+            <button id="generate-draft" class="primary-button" type="button">產生考題草稿</button>
+          </div>
         </div>
       </section>
     </form>
@@ -162,12 +168,12 @@
       <div class="section-heading">
         <div>
           <p class="step-label">03</p>
-          <h2 id="result-title">8 個可編輯題格</h2>
+          <h2 id="result-title">Gemini 產生的可編輯題目</h2>
         </div>
         <span class="draft-badge">本機草稿</span>
       </div>
 
-      <p class="field-help question-grid-help">可先手動輸入或修改；題幹空白的題格不會列印。</p>
+      <p class="field-help question-grid-help">選擇 3 題或 5 題後按下「產生考題草稿」，題目產生後仍可逐題修改。</p>
       <div id="question-grid" class="question-grid"></div>
 
       <div class="result-actions">

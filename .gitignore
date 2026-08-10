@@ -6,3 +6,6 @@
 *.pfx
 credentials.*
 secrets.*
+
+.vercel
+.env*
