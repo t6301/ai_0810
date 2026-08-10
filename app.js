@@ -24,11 +24,109 @@
   const draftStatus = document.querySelector("#draft-status");
   const clearDraftButton = document.querySelector("#clear-draft");
   const generateDraftButton = document.querySelector("#generate-draft");
+  const authStatus = document.querySelector("#auth-status");
+  const googleSignInButton = document.querySelector("#google-sign-in");
+  const googleSignOutButton = document.querySelector("#google-sign-out");
 
   const DRAFT_KEY = "current-event-question-draft-v1";
   let sourceMode = "url";
   let saveTimer;
   let questionSlots = [];
+  let firebaseAuth = null;
+  let firebaseAuthSdk = null;
+
+  function updateAuthDisplay(user) {
+    if (user) {
+      authStatus.textContent = `已登入：${user.displayName || user.email || "Google 使用者"}`;
+      googleSignInButton.hidden = true;
+      googleSignOutButton.hidden = false;
+      return;
+    }
+
+    authStatus.textContent = "尚未登入｜目前使用本機草稿";
+    googleSignInButton.hidden = false;
+    googleSignOutButton.hidden = true;
+  }
+
+  function getAuthErrorMessage(error) {
+    const messages = {
+      "auth/popup-blocked": "瀏覽器阻擋了 Google 登入視窗，請允許這個網站開啟彈出視窗後再試。",
+      "auth/popup-closed-by-user": "您已關閉 Google 登入視窗，本機草稿仍會保留。",
+      "auth/cancelled-popup-request": "前一次登入尚未完成，請稍後再試。",
+      "auth/unauthorized-domain": "這個測試網址尚未加入 Firebase 授權網域，請先到 Firebase Authentication 設定。",
+      "auth/operation-not-allowed": "Firebase 尚未啟用 Google 登入，請先到 Authentication 的登入方式開啟 Google。",
+      "auth/network-request-failed": "目前無法連接 Google 登入服務，請檢查網路後再試。"
+    };
+    return messages[error?.code] || "Google 登入失敗，請稍後再試；本機草稿不會消失。";
+  }
+
+  async function initializeFirebaseAuth() {
+    if (window.location.protocol === "file:") {
+      authStatus.textContent = "本機模式｜Google 登入請使用測試網站";
+      googleSignInButton.disabled = true;
+      return;
+    }
+
+    try {
+      const [firebaseAppSdk, loadedAuthSdk] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js"),
+        import("https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js")
+      ]);
+      const response = await fetch("/api/firebase-config", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("config-unavailable");
+      }
+
+      const firebaseConfig = await response.json();
+      firebaseAuthSdk = loadedAuthSdk;
+      const firebaseApp = firebaseAppSdk.initializeApp(firebaseConfig);
+      firebaseAuth = loadedAuthSdk.getAuth(firebaseApp);
+      firebaseAuth.languageCode = "zh-TW";
+      await loadedAuthSdk.setPersistence(firebaseAuth, loadedAuthSdk.browserLocalPersistence);
+      loadedAuthSdk.onAuthStateChanged(firebaseAuth, updateAuthDisplay, () => {
+        authStatus.textContent = "無法確認登入狀態，請重新整理頁面。";
+      });
+    } catch {
+      authStatus.textContent = "Google 登入尚未完成設定｜本機功能仍可使用";
+      googleSignInButton.disabled = true;
+    }
+  }
+
+  async function handleGoogleSignIn() {
+    if (!firebaseAuth || !firebaseAuthSdk) {
+      showMessage("Google 登入尚未完成設定，請稍後再試。", "error");
+      return;
+    }
+
+    googleSignInButton.disabled = true;
+    googleSignInButton.textContent = "正在開啟 Google…";
+
+    try {
+      await firebaseAuthSdk.signInWithPopup(firebaseAuth, new firebaseAuthSdk.GoogleAuthProvider());
+      showMessage("Google 登入成功，本機草稿仍然保留。", "success");
+    } catch (error) {
+      showMessage(getAuthErrorMessage(error), "error");
+    } finally {
+      googleSignInButton.disabled = false;
+      googleSignInButton.textContent = "使用 Google 登入";
+    }
+  }
+
+  async function handleGoogleSignOut() {
+    if (!firebaseAuth) {
+      return;
+    }
+
+    googleSignOutButton.disabled = true;
+    try {
+      await firebaseAuthSdk.signOut(firebaseAuth);
+      showMessage("已登出 Google 帳號，目前繼續使用這台電腦的本機草稿。", "success");
+    } catch {
+      showMessage("登出失敗，請檢查網路後再試。", "error");
+    } finally {
+      googleSignOutButton.disabled = false;
+    }
+  }
 
   function showMessage(message, type) {
     messageBox.textContent = message;
@@ -539,6 +637,8 @@
   printStudentButton.addEventListener("click", () => buildPrintSheet("student"));
   printAnswerButton.addEventListener("click", () => buildPrintSheet("answer"));
   generateDraftButton.addEventListener("click", generateQuestionDrafts);
+  googleSignInButton.addEventListener("click", handleGoogleSignIn);
+  googleSignOutButton.addEventListener("click", handleGoogleSignOut);
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -569,4 +669,5 @@
 
   renderQuestionSlots(0);
   loadDraft();
+  initializeFirebaseAuth();
 })();
