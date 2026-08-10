@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="提供高中職老師整理時事素材與準備命題草稿的工具。">
+  <title>校園時事命題｜老師草稿工具</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">跳到主要內容</a>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true">題</div>
+        <div>
+          <p class="eyebrow">高中職教師備課工具</p>
+          <h1>校園時事命題</h1>
+        </div>
+      </div>
+      <span class="draft-badge">草稿工具</span>
+    </div>
+  </header>
+
+  <main id="main-content" class="page-shell">
+    <section class="intro-panel" aria-labelledby="intro-title">
+      <div>
+        <p class="eyebrow">第一步｜準備素材</p>
+        <h2 id="intro-title">把新聞整理成可檢查的題目草稿</h2>
+        <p>貼入新聞網址或文字，設定難度後準備出題。所有 AI 產出都必須由老師親自查核。</p>
+      </div>
+      <ol class="progress-list" aria-label="使用步驟">
+        <li class="is-active"><span>1</span>放入素材</li>
+        <li><span>2</span>產生草稿</li>
+        <li><span>3</span>查核輸出</li>
+      </ol>
+    </section>
+
+    <div id="message-box" class="message-box" role="status" aria-live="polite" hidden></div>
+
+    <form id="question-form" novalidate>
+      <section class="card" aria-labelledby="source-title">
+        <div class="section-heading">
+          <div>
+            <p class="step-label">01</p>
+            <h2 id="source-title">時事素材</h2>
+          </div>
+          <p>選一種最方便的方式</p>
+        </div>
+
+        <div class="source-switch" role="group" aria-label="素材輸入方式">
+          <button type="button" class="source-option is-selected" data-source="url" aria-pressed="true">
+            <span aria-hidden="true">🔗</span>
+            貼新聞網址
+          </button>
+          <button type="button" class="source-option" data-source="text" aria-pressed="false">
+            <span aria-hidden="true">📝</span>
+            貼新聞文字
+          </button>
+        </div>
+
+        <div id="url-panel" class="source-panel">
+          <label for="news-url">新聞網址</label>
+          <input id="news-url" name="newsUrl" type="url" inputmode="url" placeholder="例如：https://example.com/news" autocomplete="url">
+          <p class="field-help">若網址讀不到，可切換成「貼新聞文字」。</p>
+        </div>
+
+        <div id="text-panel" class="source-panel" hidden>
+          <label for="news-text">新聞文字</label>
+          <textarea id="news-text" name="newsText" rows="8" placeholder="請貼上足以看懂事件背景、經過與結果的新聞內容。"></textarea>
+          <p class="field-help">請先移除姓名、電話、學號等學生個人資料。</p>
+        </div>
+
+        <div class="form-grid form-grid--two">
+          <div>
+            <label for="media-name">媒體名稱</label>
+            <input id="media-name" name="mediaName" type="text" placeholder="例如：中央社">
+          </div>
+          <div>
+            <label for="publish-date">新聞日期</label>
+            <input id="publish-date" name="publishDate" type="date">
+          </div>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="settings-title">
+        <div class="section-heading">
+          <div>
+            <p class="step-label">02</p>
+            <h2 id="settings-title">出題設定</h2>
+          </div>
+          <p>第一版固定產生 5 題</p>
+        </div>
+
+        <div class="settings-grid">
+          <div class="setting-box">
+            <span class="setting-title">題目組合</span>
+            <strong>4 題單選＋1 題簡答</strong>
+            <span>單選題皆為四選一</span>
+          </div>
+
+          <div class="setting-box">
+            <label for="difficulty">難度</label>
+            <select id="difficulty" name="difficulty">
+              <option value="">請選擇難度</option>
+              <option value="基礎">基礎｜理解新聞重點</option>
+              <option value="中等">中等｜比較與判斷</option>
+              <option value="進階">進階｜分析與應用</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <p><strong>提醒：</strong>本階段尚未連接 AI，不會產生假題目。</p>
+          <button class="primary-button" type="submit">檢查素材並準備出題</button>
+        </div>
+      </section>
+    </form>
+
+    <section id="result-card" class="card result-card" aria-labelledby="result-title">
+      <div class="section-heading">
+        <div>
+          <p class="step-label">03</p>
+          <h2 id="result-title">題目草稿</h2>
+        </div>
+        <span class="draft-badge">尚未產生</span>
+      </div>
+
+      <div id="empty-state" class="empty-state">
+        <div class="empty-icon" aria-hidden="true">✓</div>
+        <h3>先完成上方素材與出題設定</h3>
+        <p>資料通過檢查後，這裡會顯示下一步提示。AI 出題功能會在後續里程碑接上。</p>
+      </div>
+
+      <p id="output-lock-note" class="field-help">
+        列印學生題目卷與下載老師解答卷，會在真實題目產生功能完成後顯示。
+      </p>
+    </section>
+
+    <aside class="review-note" aria-labelledby="review-title">
+      <h2 id="review-title">老師最後要親自確認</h2>
+      <ul>
+        <li>事實與新聞日期是否正確</li>
+        <li>題幹是否改寫，沒有大段照抄原文</li>
+        <li>答案是否唯一，選項是否沒有偏誤</li>
+        <li>教材使用是否符合著作權規範</li>
+      </ul>
+    </aside>
+  </main>
+
+  <footer class="site-footer">
+    <p>本工具產出的內容一律視為草稿，最終決定權由老師保留。</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
