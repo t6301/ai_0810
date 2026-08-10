@@ -27,6 +27,12 @@
   const authStatus = document.querySelector("#auth-status");
   const googleSignInButton = document.querySelector("#google-sign-in");
   const googleSignOutButton = document.querySelector("#google-sign-out");
+  const cloudRecords = document.querySelector("#cloud-records");
+  const examTitle = document.querySelector("#exam-title");
+  const saveCloudExamButton = document.querySelector("#save-cloud-exam");
+  const saveCloudExamAsButton = document.querySelector("#save-cloud-exam-as");
+  const cloudRecordStatus = document.querySelector("#cloud-record-status");
+  const cloudRecordList = document.querySelector("#cloud-record-list");
 
   const DRAFT_KEY = "current-event-question-draft-v1";
   let sourceMode = "url";
@@ -34,15 +40,25 @@
   let questionSlots = [];
   let firebaseAuth = null;
   let firebaseAuthSdk = null;
+  let firebaseDb = null;
+  let firebaseFirestoreSdk = null;
+  let currentFirebaseUser = null;
+  let currentCloudExamId = "";
 
   function updateAuthDisplay(user) {
+    currentFirebaseUser = user || null;
+    cloudRecords.hidden = !user;
+
     if (user) {
       authStatus.textContent = `已登入：${user.displayName || user.email || "Google 使用者"}`;
       googleSignInButton.hidden = true;
       googleSignOutButton.hidden = false;
+      loadCloudRecordList();
       return;
     }
 
+    currentCloudExamId = "";
+    cloudRecordList.innerHTML = '<p class="field-help">登入後才能查看自己的雲端紀錄。</p>';
     authStatus.textContent = "尚未登入｜目前使用本機草稿";
     googleSignInButton.hidden = false;
     googleSignOutButton.hidden = true;
@@ -53,6 +69,7 @@
       "auth/popup-blocked": "瀏覽器阻擋了 Google 登入視窗，請允許這個網站開啟彈出視窗後再試。",
       "auth/popup-closed-by-user": "您已關閉 Google 登入視窗，本機草稿仍會保留。",
       "auth/cancelled-popup-request": "前一次登入尚未完成，請稍後再試。",
+      "auth/redirect-cancelled-by-user": "您已取消 Google 登入，本機草稿仍會保留。",
       "auth/unauthorized-domain": "這個測試網址尚未加入 Firebase 授權網域，請先到 Firebase Authentication 設定。",
       "auth/operation-not-allowed": "Firebase 尚未啟用 Google 登入，請先到 Authentication 的登入方式開啟 Google。",
       "auth/network-request-failed": "目前無法連接 Google 登入服務，請檢查網路後再試。"
@@ -68,9 +85,10 @@
     }
 
     try {
-      const [firebaseAppSdk, loadedAuthSdk] = await Promise.all([
+      const [firebaseAppSdk, loadedAuthSdk, loadedFirestoreSdk] = await Promise.all([
         import("https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js"),
-        import("https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js")
+        import("https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js"),
+        import("https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js")
       ]);
       const response = await fetch("/api/firebase-config", { cache: "no-store" });
       if (!response.ok) {
@@ -79,13 +97,16 @@
 
       const firebaseConfig = await response.json();
       firebaseAuthSdk = loadedAuthSdk;
+      firebaseFirestoreSdk = loadedFirestoreSdk;
       const firebaseApp = firebaseAppSdk.initializeApp(firebaseConfig);
       firebaseAuth = loadedAuthSdk.getAuth(firebaseApp);
+      firebaseDb = loadedFirestoreSdk.getFirestore(firebaseApp);
       firebaseAuth.languageCode = "zh-TW";
       await loadedAuthSdk.setPersistence(firebaseAuth, loadedAuthSdk.browserLocalPersistence);
       loadedAuthSdk.onAuthStateChanged(firebaseAuth, updateAuthDisplay, () => {
         authStatus.textContent = "無法確認登入狀態，請重新整理頁面。";
       });
+      await loadedAuthSdk.getRedirectResult(firebaseAuth);
     } catch {
       authStatus.textContent = "Google 登入尚未完成設定｜本機功能仍可使用";
       googleSignInButton.disabled = true;
@@ -99,14 +120,12 @@
     }
 
     googleSignInButton.disabled = true;
-    googleSignInButton.textContent = "正在開啟 Google…";
+    googleSignInButton.textContent = "正在前往 Google…";
 
     try {
-      await firebaseAuthSdk.signInWithPopup(firebaseAuth, new firebaseAuthSdk.GoogleAuthProvider());
-      showMessage("Google 登入成功，本機草稿仍然保留。", "success");
+      await firebaseAuthSdk.signInWithRedirect(firebaseAuth, new firebaseAuthSdk.GoogleAuthProvider());
     } catch (error) {
       showMessage(getAuthErrorMessage(error), "error");
-    } finally {
       googleSignInButton.disabled = false;
       googleSignInButton.textContent = "使用 Google 登入";
     }
@@ -187,6 +206,208 @@
       questions: getQuestionData(),
       savedAt: new Date().toISOString()
     };
+  }
+
+  function getCloudExamData() {
+    return {
+      title: examTitle.value.trim() || newsTitle.value.trim() || `${subject.value.trim() || "未命名"}考卷`,
+      conditions: {
+        subject: subject.value,
+        sourceMode,
+        questionType: questionType.value,
+        questionCount: questionCount.value,
+        difficulty: difficulty.value
+      },
+      curriculumFocus: curriculumFocus.value,
+      newsMaterial: {
+        url: newsUrl.value,
+        text: newsText.value,
+        title: newsTitle.value,
+        mediaName: mediaName.value,
+        publishDate: publishDate.value
+      },
+      questions: getQuestionData()
+    };
+  }
+
+  function getCloudCollection() {
+    return firebaseFirestoreSdk.collection(firebaseDb, "users", currentFirebaseUser.uid, "examSets");
+  }
+
+  function setCloudStatus(message, isError = false) {
+    cloudRecordStatus.textContent = message;
+    cloudRecordStatus.classList.toggle("is-error", isError);
+  }
+
+  function formatCloudTime(timestamp) {
+    if (!timestamp || typeof timestamp.toDate !== "function") {
+      return "剛剛更新";
+    }
+
+    return new Intl.DateTimeFormat("zh-TW", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(timestamp.toDate());
+  }
+
+  function getCloudErrorMessage(error) {
+    const messages = {
+      "permission-denied": "Firestore 安全規則尚未發布，或目前帳號沒有權限。",
+      "unavailable": "目前無法連接雲端，請檢查網路後再試。",
+      "not-found": "這筆雲端紀錄已不存在，清單將重新整理。"
+    };
+    return messages[error?.code] || "雲端操作失敗，請稍後再試；本機草稿不會消失。";
+  }
+
+  async function loadCloudRecordList() {
+    if (!currentFirebaseUser || !firebaseDb || !firebaseFirestoreSdk) {
+      return;
+    }
+
+    cloudRecordList.innerHTML = '<p class="field-help">正在讀取命題紀錄…</p>';
+
+    try {
+      const recordQuery = firebaseFirestoreSdk.query(
+        getCloudCollection(),
+        firebaseFirestoreSdk.orderBy("updatedAt", "desc")
+      );
+      const snapshot = await firebaseFirestoreSdk.getDocs(recordQuery);
+      cloudRecordList.innerHTML = "";
+
+      if (snapshot.empty) {
+        cloudRecordList.innerHTML = '<p class="field-help">目前沒有雲端紀錄。填好標題後，按「儲存這份考卷」。</p>';
+        setCloudStatus("雲端目前沒有命題紀錄");
+        return;
+      }
+
+      snapshot.forEach((record) => {
+        const data = record.data();
+        const item = document.createElement("article");
+        item.className = "question-slot";
+        item.dataset.cloudExamId = record.id;
+
+        const heading = document.createElement("h3");
+        heading.textContent = data.title || "未命名考卷";
+        const time = document.createElement("p");
+        time.className = "field-help";
+        time.textContent = `更新：${formatCloudTime(data.updatedAt)}`;
+        const actions = document.createElement("div");
+        actions.className = "result-actions";
+        actions.innerHTML = `
+          <button type="button" class="secondary-button" data-cloud-action="load">載入</button>
+          <button type="button" class="danger-button" data-cloud-action="delete">刪除</button>
+        `;
+        item.append(heading, time, actions);
+        cloudRecordList.append(item);
+      });
+
+      setCloudStatus(`已讀取 ${snapshot.size} 筆自己的命題紀錄`);
+    } catch (error) {
+      cloudRecordList.innerHTML = '<p class="field-help">暫時無法讀取雲端紀錄。</p>';
+      setCloudStatus(getCloudErrorMessage(error), true);
+    }
+  }
+
+  async function saveCloudExam(saveAsNew = false) {
+    if (!currentFirebaseUser || !firebaseDb || !firebaseFirestoreSdk) {
+      showMessage("請先使用 Google 登入，才能儲存雲端紀錄。", "error");
+      return;
+    }
+
+    const data = getCloudExamData();
+    if (!hasDraftContent(getDraftData())) {
+      showMessage("目前沒有可儲存的考卷內容。", "error");
+      return;
+    }
+
+    const button = saveAsNew ? saveCloudExamAsButton : saveCloudExamButton;
+    button.disabled = true;
+    setCloudStatus("正在儲存雲端紀錄…");
+
+    try {
+      if (!saveAsNew && currentCloudExamId) {
+        const recordRef = firebaseFirestoreSdk.doc(getCloudCollection(), currentCloudExamId);
+        await firebaseFirestoreSdk.updateDoc(recordRef, {
+          ...data,
+          updatedAt: firebaseFirestoreSdk.serverTimestamp()
+        });
+      } else {
+        const recordRef = await firebaseFirestoreSdk.addDoc(getCloudCollection(), {
+          ...data,
+          createdAt: firebaseFirestoreSdk.serverTimestamp(),
+          updatedAt: firebaseFirestoreSdk.serverTimestamp()
+        });
+        currentCloudExamId = recordRef.id;
+      }
+
+      examTitle.value = data.title;
+      setCloudStatus(saveAsNew ? "已另存成新的雲端紀錄" : "考卷已儲存到自己的雲端紀錄");
+      await loadCloudRecordList();
+    } catch (error) {
+      setCloudStatus(getCloudErrorMessage(error), true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function restoreCloudExam(data) {
+    const conditions = data.conditions || {};
+    const news = data.newsMaterial || {};
+    examTitle.value = typeof data.title === "string" ? data.title : "";
+    subject.value = typeof conditions.subject === "string" ? conditions.subject : "";
+    curriculumFocus.value = typeof data.curriculumFocus === "string" ? data.curriculumFocus : "";
+    newsUrl.value = typeof news.url === "string" ? news.url : "";
+    newsText.value = typeof news.text === "string" ? news.text : "";
+    newsTitle.value = typeof news.title === "string" ? news.title : "";
+    mediaName.value = typeof news.mediaName === "string" ? news.mediaName : "";
+    publishDate.value = typeof news.publishDate === "string" ? news.publishDate : "";
+    questionType.value = typeof conditions.questionType === "string" ? conditions.questionType : "";
+    difficulty.value = typeof conditions.difficulty === "string" ? conditions.difficulty : "";
+    const questions = Array.isArray(data.questions) ? data.questions : [];
+    const count = questions.length;
+    questionCount.value = [3, 5].includes(count) ? String(count) : (conditions.questionCount || "");
+    renderQuestionSlots(count);
+    restoreQuestions(questions);
+    switchSource(conditions.sourceMode === "text" ? "text" : "url", { focus: false, save: false });
+    saveDraft();
+  }
+
+  async function loadCloudExam(recordId) {
+    try {
+      const recordRef = firebaseFirestoreSdk.doc(getCloudCollection(), recordId);
+      const snapshot = await firebaseFirestoreSdk.getDoc(recordRef);
+      if (!snapshot.exists()) {
+        throw Object.assign(new Error("not-found"), { code: "not-found" });
+      }
+
+      restoreCloudExam(snapshot.data());
+      currentCloudExamId = recordId;
+      showMessage("已載入雲端考卷，並同步保存在這台電腦。", "success");
+      resultCard.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+      showMessage(getCloudErrorMessage(error), "error");
+      await loadCloudRecordList();
+    }
+  }
+
+  async function deleteCloudExam(recordId) {
+    if (!window.confirm("確定要刪除這筆雲端命題紀錄嗎？刪除後無法復原。")) {
+      return;
+    }
+
+    try {
+      await firebaseFirestoreSdk.deleteDoc(firebaseFirestoreSdk.doc(getCloudCollection(), recordId));
+      if (currentCloudExamId === recordId) {
+        currentCloudExamId = "";
+      }
+      setCloudStatus("雲端紀錄已刪除，本機表單內容仍保留");
+      await loadCloudRecordList();
+    } catch (error) {
+      setCloudStatus(getCloudErrorMessage(error), true);
+    }
   }
 
   function hasDraftContent(draft) {
@@ -639,6 +860,22 @@
   generateDraftButton.addEventListener("click", generateQuestionDrafts);
   googleSignInButton.addEventListener("click", handleGoogleSignIn);
   googleSignOutButton.addEventListener("click", handleGoogleSignOut);
+  saveCloudExamButton.addEventListener("click", () => saveCloudExam(false));
+  saveCloudExamAsButton.addEventListener("click", () => saveCloudExam(true));
+  cloudRecordList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-cloud-action]");
+    const record = button?.closest("[data-cloud-exam-id]");
+
+    if (!button || !record) {
+      return;
+    }
+
+    if (button.dataset.cloudAction === "load") {
+      loadCloudExam(record.dataset.cloudExamId);
+    } else if (button.dataset.cloudAction === "delete") {
+      deleteCloudExam(record.dataset.cloudExamId);
+    }
+  });
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();

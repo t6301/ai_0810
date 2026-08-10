@@ -186,6 +186,32 @@
       </div>
     </section>
 
+    <section id="cloud-records" class="card" aria-labelledby="cloud-records-title" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="step-label">04</p>
+          <h2 id="cloud-records-title">我的命題紀錄</h2>
+        </div>
+        <span class="draft-badge">Google 雲端</span>
+      </div>
+
+      <div class="form-grid form-grid--two">
+        <div>
+          <label for="exam-title">考卷標題</label>
+          <input id="exam-title" type="text" placeholder="例如：公民科第一次時事練習">
+        </div>
+        <div class="result-actions">
+          <button id="save-cloud-exam" type="button" class="primary-button">儲存這份考卷</button>
+          <button id="save-cloud-exam-as" type="button" class="secondary-button">另存新紀錄</button>
+        </div>
+      </div>
+
+      <p id="cloud-record-status" class="field-help" role="status" aria-live="polite">登入後可在不同瀏覽器載回自己的命題紀錄。</p>
+      <div id="cloud-record-list" class="question-grid">
+        <p class="field-help">正在讀取命題紀錄…</p>
+      </div>
+    </section>
+
     <aside class="review-note" aria-labelledby="review-title">
       <h2 id="review-title">老師最後要親自確認</h2>
       <ul>

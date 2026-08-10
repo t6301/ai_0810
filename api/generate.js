@@ -136,11 +136,10 @@ module.exports = async function handler(request, response) {
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: buildPrompt(input) }] }],
         generationConfig: {
-          temperature: 0.4,
           maxOutputTokens: 8192,
           responseFormat: {
             text: {
-              mimeType: "application/json",
+              mimeType: "APPLICATION_JSON",
               schema: questionSchema
             }
           }
@@ -150,11 +149,39 @@ module.exports = async function handler(request, response) {
 
     const geminiData = await geminiResponse.json().catch(() => ({}));
     if (!geminiResponse.ok) {
-      const status = geminiResponse.status === 429 ? 429 : 502;
-      const message = geminiResponse.status === 429
-        ? "Gemini 目前使用量已達限制，請稍後再試。"
-        : "Gemini 無法完成出題，請確認 Vercel 金鑰設定後再試。";
-      sendJson(response, status, { error: message });
+      const errorStatus = cleanText(geminiData.error?.status, 100);
+      const providerMessage = cleanText(geminiData.error?.message, 500);
+      const safeProviderMessage = providerMessage.replace(/AIza[0-9A-Za-z_-]+/g, "[金鑰已隱藏]");
+      console.error("[api/generate] Gemini request failed", {
+        httpStatus: geminiResponse.status,
+        errorStatus,
+        providerMessage: safeProviderMessage
+      });
+
+      if (geminiResponse.status === 429 || errorStatus === "RESOURCE_EXHAUSTED") {
+        sendJson(response, 429, { error: "Gemini 目前使用量已達限制，請稍後再試。" });
+        return;
+      }
+
+      if (
+        ["UNAUTHENTICATED", "PERMISSION_DENIED"].includes(errorStatus) ||
+        providerMessage.toLowerCase().includes("api key not valid")
+      ) {
+        sendJson(response, 502, { error: "Gemini 金鑰無效或尚未取得使用權限，請到 Vercel 重新設定有效金鑰。" });
+        return;
+      }
+
+      if (geminiResponse.status === 404 || errorStatus === "NOT_FOUND") {
+        sendJson(response, 502, { error: "目前設定的 Gemini 模型無法使用，請稍後再試。" });
+        return;
+      }
+
+      if (geminiResponse.status === 400 || errorStatus === "INVALID_ARGUMENT") {
+        sendJson(response, 502, { error: "Gemini 收到不支援的出題設定，請重新整理網站後再試。" });
+        return;
+      }
+
+      sendJson(response, 502, { error: "Gemini 暫時無法完成出題，請稍後再試。" });
       return;
     }
 
