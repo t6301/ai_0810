@@ -49,6 +49,17 @@
           <p>選一種最方便的方式</p>
         </div>
 
+        <div class="form-grid form-grid--two">
+          <div>
+            <label for="subject">科目</label>
+            <input id="subject" name="subject" type="text" placeholder="例如：公民與社會">
+          </div>
+          <div>
+            <label for="curriculum-focus">課綱單元重點</label>
+            <textarea id="curriculum-focus" name="curriculumFocus" rows="4" placeholder="請貼上或輸入這次命題要對應的單元重點。"></textarea>
+          </div>
+        </div>
+
         <div class="source-switch" role="group" aria-label="素材輸入方式">
           <button type="button" class="source-option is-selected" data-source="url" aria-pressed="true">
             <span aria-hidden="true">🔗</span>
@@ -67,14 +78,22 @@
         </div>
 
         <div id="text-panel" class="source-panel" hidden>
-          <label for="news-text">新聞文字</label>
-          <textarea id="news-text" name="newsText" rows="8" placeholder="請貼上足以看懂事件背景、經過與結果的新聞內容。"></textarea>
+          <p class="field-help">不使用網址，直接在下方貼入新聞重點。</p>
+        </div>
+
+        <div class="source-panel news-highlight-panel">
+          <label for="news-text">新聞重點貼上區</label>
+          <textarea id="news-text" name="newsText" rows="8" placeholder="請貼上足以看懂事件背景、經過與結果的新聞重點。"></textarea>
           <p class="field-help">請先移除姓名、電話、學號等學生個人資料。</p>
         </div>
 
-        <div class="form-grid form-grid--two">
+        <div class="form-grid form-grid--three">
           <div>
-            <label for="media-name">媒體名稱</label>
+            <label for="news-title">新聞標題</label>
+            <input id="news-title" name="newsTitle" type="text" placeholder="請輸入新聞標題">
+          </div>
+          <div>
+            <label for="media-name">新聞來源</label>
             <input id="media-name" name="mediaName" type="text" placeholder="例如：中央社">
           </div>
           <div>
@@ -90,14 +109,26 @@
             <p class="step-label">02</p>
             <h2 id="settings-title">出題設定</h2>
           </div>
-          <p>第一版固定產生 5 題</p>
+          <p>選擇這次要準備的題型與題數</p>
         </div>
 
         <div class="settings-grid">
           <div class="setting-box">
-            <span class="setting-title">題目組合</span>
-            <strong>4 題單選＋1 題簡答</strong>
-            <span>單選題皆為四選一</span>
+            <label for="question-type">題型</label>
+            <select id="question-type" name="questionType">
+              <option value="">請選擇題型</option>
+              <option value="單選">單選</option>
+              <option value="題組">題組</option>
+            </select>
+          </div>
+
+          <div class="setting-box">
+            <label for="question-count">題數</label>
+            <select id="question-count" name="questionCount">
+              <option value="">請選擇題數</option>
+              <option value="3">3 題</option>
+              <option value="5">5 題</option>
+            </select>
           </div>
 
           <div class="setting-box">
@@ -111,9 +142,18 @@
           </div>
         </div>
 
+        <div class="local-draft-bar" aria-labelledby="local-draft-title">
+          <div>
+            <span id="local-draft-title" class="setting-title">本機草稿</span>
+            <p id="draft-status" class="draft-status" role="status" aria-live="polite">尚未有本機草稿</p>
+            <p class="field-help">內容只保存在目前瀏覽器；使用共用電腦後請清除草稿。</p>
+          </div>
+          <button id="clear-draft" class="danger-button" type="button" hidden>清除目前草稿</button>
+        </div>
+
         <div class="action-row">
-          <p><strong>提醒：</strong>本階段尚未連接 AI，不會產生假題目。</p>
-          <button class="primary-button" type="submit">檢查素材並準備出題</button>
+          <p><strong>提醒：</strong>本階段只準備與保存題目，不會連接 AI。</p>
+          <button class="primary-button" type="submit">檢查命題條件</button>
         </div>
       </section>
     </form>
@@ -122,20 +162,18 @@
       <div class="section-heading">
         <div>
           <p class="step-label">03</p>
-          <h2 id="result-title">題目草稿</h2>
+          <h2 id="result-title">8 個可編輯題格</h2>
         </div>
-        <span class="draft-badge">尚未產生</span>
+        <span class="draft-badge">本機草稿</span>
       </div>
 
-      <div id="empty-state" class="empty-state">
-        <div class="empty-icon" aria-hidden="true">✓</div>
-        <h3>先完成上方素材與出題設定</h3>
-        <p>資料通過檢查後，這裡會顯示下一步提示。AI 出題功能會在後續里程碑接上。</p>
-      </div>
+      <p class="field-help question-grid-help">可先手動輸入或修改；題幹空白的題格不會列印。</p>
+      <div id="question-grid" class="question-grid"></div>
 
-      <p id="output-lock-note" class="field-help">
-        列印學生題目卷與下載老師解答卷，會在真實題目產生功能完成後顯示。
-      </p>
+      <div class="result-actions">
+        <button id="print-student" type="button" class="secondary-button">列印試題卷</button>
+        <button id="print-answer" type="button" class="secondary-button">列印答案詳解卷</button>
+      </div>
     </section>
 
     <aside class="review-note" aria-labelledby="review-title">
@@ -147,6 +185,8 @@
         <li>教材使用是否符合著作權規範</li>
       </ul>
     </aside>
+
+    <section id="print-sheet" class="print-sheet" aria-label="列印內容" hidden></section>
   </main>
 
   <footer class="site-footer">

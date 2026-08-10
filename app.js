@@ -7,14 +7,27 @@
   const textPanel = document.querySelector("#text-panel");
   const newsUrl = document.querySelector("#news-url");
   const newsText = document.querySelector("#news-text");
+  const subject = document.querySelector("#subject");
+  const curriculumFocus = document.querySelector("#curriculum-focus");
+  const newsTitle = document.querySelector("#news-title");
   const mediaName = document.querySelector("#media-name");
   const publishDate = document.querySelector("#publish-date");
+  const questionType = document.querySelector("#question-type");
+  const questionCount = document.querySelector("#question-count");
   const difficulty = document.querySelector("#difficulty");
   const messageBox = document.querySelector("#message-box");
   const resultCard = document.querySelector("#result-card");
-  const emptyState = document.querySelector("#empty-state");
+  const questionGrid = document.querySelector("#question-grid");
+  const printStudentButton = document.querySelector("#print-student");
+  const printAnswerButton = document.querySelector("#print-answer");
+  const printSheet = document.querySelector("#print-sheet");
+  const draftStatus = document.querySelector("#draft-status");
+  const clearDraftButton = document.querySelector("#clear-draft");
 
+  const DRAFT_KEY = "current-event-question-draft-v1";
   let sourceMode = "url";
+  let saveTimer;
+  let questionSlots = [];
 
   function showMessage(message, type) {
     messageBox.textContent = message;
@@ -29,7 +42,8 @@
     messageBox.className = "message-box";
   }
 
-  function switchSource(nextMode) {
+  function switchSource(nextMode, options = {}) {
+    const { focus = true, save = true } = options;
     sourceMode = nextMode;
     clearMessage();
 
@@ -43,13 +57,217 @@
     urlPanel.hidden = !useUrl;
     textPanel.hidden = useUrl;
     newsUrl.required = useUrl;
-    newsText.required = !useUrl;
+    newsText.required = true;
 
-    if (useUrl) {
-      newsUrl.focus();
-    } else {
-      newsText.focus();
+    if (focus) {
+      if (useUrl) {
+        newsUrl.focus();
+      } else {
+        newsText.focus();
+      }
     }
+
+    if (save) {
+      scheduleDraftSave();
+    }
+  }
+
+  function getDraftData() {
+    return {
+      sourceMode,
+      subject: subject.value,
+      curriculumFocus: curriculumFocus.value,
+      newsUrl: newsUrl.value,
+      newsText: newsText.value,
+      newsTitle: newsTitle.value,
+      mediaName: mediaName.value,
+      publishDate: publishDate.value,
+      questionType: questionType.value,
+      questionCount: questionCount.value,
+      difficulty: difficulty.value,
+      questions: getQuestionData(),
+      savedAt: new Date().toISOString()
+    };
+  }
+
+  function hasDraftContent(draft) {
+    return Boolean(
+      draft.subject.trim() ||
+      draft.curriculumFocus.trim() ||
+      draft.newsUrl.trim() ||
+      draft.newsText.trim() ||
+      draft.newsTitle.trim() ||
+      draft.mediaName.trim() ||
+      draft.publishDate ||
+      draft.questionType ||
+      draft.questionCount ||
+      draft.difficulty ||
+      draft.questions.some((question) => question.stem.trim())
+    );
+  }
+
+  function renderQuestionSlots() {
+    questionGrid.innerHTML = "";
+
+    for (let index = 0; index < 8; index += 1) {
+      const slot = document.createElement("article");
+      slot.className = "question-slot";
+      slot.dataset.questionIndex = String(index);
+      slot.innerHTML = `
+        <div class="question-slot-header">
+          <h3>第 ${index + 1} 題</h3>
+          <span>題幹空白時不列印</span>
+        </div>
+        <label for="question-${index}-stem">題幹</label>
+        <textarea id="question-${index}-stem" data-field="stem" rows="4" placeholder="請輸入自足、可獨立閱讀的題幹。"></textarea>
+        <div class="options-grid">
+          ${["A", "B", "C", "D"].map((label) => `
+            <div>
+              <label for="question-${index}-option-${label}">選項 ${label}</label>
+              <input id="question-${index}-option-${label}" data-field="option${label}" type="text" placeholder="選項 ${label}">
+            </div>
+          `).join("")}
+        </div>
+        <div class="question-detail-grid">
+          <div>
+            <label for="question-${index}-answer">答案</label>
+            <select id="question-${index}-answer" data-field="answer">
+              <option value="">請選擇答案</option>
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+            </select>
+          </div>
+          <div>
+            <label for="question-${index}-source">出處提醒</label>
+            <input id="question-${index}-source" data-field="source" type="text" placeholder="例如：中央社，2026-08-10">
+          </div>
+        </div>
+        <label for="question-${index}-explanation">詳解</label>
+        <textarea id="question-${index}-explanation" data-field="explanation" rows="3" placeholder="請說明正確答案與判斷理由。"></textarea>
+      `;
+      questionGrid.append(slot);
+    }
+
+    questionSlots = [...questionGrid.querySelectorAll(".question-slot")];
+  }
+
+  function getQuestionData() {
+    return questionSlots.map((slot) => ({
+      stem: slot.querySelector('[data-field="stem"]').value,
+      options: ["A", "B", "C", "D"].map((label) => slot.querySelector(`[data-field="option${label}"]`).value),
+      answer: slot.querySelector('[data-field="answer"]').value,
+      explanation: slot.querySelector('[data-field="explanation"]').value,
+      source: slot.querySelector('[data-field="source"]').value
+    }));
+  }
+
+  function restoreQuestions(questions) {
+    if (!Array.isArray(questions)) {
+      return;
+    }
+
+    questionSlots.forEach((slot, index) => {
+      const question = questions[index] || {};
+      slot.querySelector('[data-field="stem"]').value = typeof question.stem === "string" ? question.stem : "";
+      ["A", "B", "C", "D"].forEach((label, optionIndex) => {
+        const options = Array.isArray(question.options) ? question.options : [];
+        slot.querySelector(`[data-field="option${label}"]`).value = typeof options[optionIndex] === "string" ? options[optionIndex] : "";
+      });
+      slot.querySelector('[data-field="answer"]').value = typeof question.answer === "string" ? question.answer : "";
+      slot.querySelector('[data-field="explanation"]').value = typeof question.explanation === "string" ? question.explanation : "";
+      slot.querySelector('[data-field="source"]').value = typeof question.source === "string" ? question.source : "";
+    });
+  }
+
+  function formatSavedTime(dateValue) {
+    return new Intl.DateTimeFormat("zh-TW", {
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(dateValue);
+  }
+
+  function updateDraftStatus(message, isError = false) {
+    draftStatus.textContent = message;
+    draftStatus.classList.toggle("is-error", isError);
+  }
+
+  function saveDraft() {
+    const draft = getDraftData();
+
+    try {
+      if (!hasDraftContent(draft)) {
+        localStorage.removeItem(DRAFT_KEY);
+        updateDraftStatus("尚未有本機草稿");
+        clearDraftButton.hidden = true;
+        return;
+      }
+
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      updateDraftStatus(`已自動保存於這台裝置｜${formatSavedTime(new Date(draft.savedAt))}`);
+      clearDraftButton.hidden = false;
+    } catch {
+      updateDraftStatus("瀏覽器不允許保存草稿，請勿關閉這個頁面。", true);
+      clearDraftButton.hidden = true;
+    }
+  }
+
+  function scheduleDraftSave() {
+    window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(saveDraft, 250);
+  }
+
+  function loadDraft() {
+    try {
+      const savedValue = localStorage.getItem(DRAFT_KEY);
+
+      if (!savedValue) {
+        switchSource("url", { focus: false, save: false });
+        return;
+      }
+
+      const draft = JSON.parse(savedValue);
+      subject.value = typeof draft.subject === "string" ? draft.subject : "";
+      curriculumFocus.value = typeof draft.curriculumFocus === "string" ? draft.curriculumFocus : "";
+      newsUrl.value = typeof draft.newsUrl === "string" ? draft.newsUrl : "";
+      newsText.value = typeof draft.newsText === "string" ? draft.newsText : "";
+      newsTitle.value = typeof draft.newsTitle === "string" ? draft.newsTitle : "";
+      mediaName.value = typeof draft.mediaName === "string" ? draft.mediaName : "";
+      publishDate.value = typeof draft.publishDate === "string" ? draft.publishDate : "";
+      questionType.value = typeof draft.questionType === "string" ? draft.questionType : "";
+      questionCount.value = typeof draft.questionCount === "string" ? draft.questionCount : "";
+      difficulty.value = typeof draft.difficulty === "string" ? draft.difficulty : "";
+      restoreQuestions(draft.questions);
+      switchSource(draft.sourceMode === "text" ? "text" : "url", { focus: false, save: false });
+      updateDraftStatus("已恢復上次保存在這台裝置的草稿");
+      clearDraftButton.hidden = false;
+    } catch {
+      localStorage.removeItem(DRAFT_KEY);
+      switchSource("url", { focus: false, save: false });
+      updateDraftStatus("先前的草稿無法讀取，已改用空白表單。", true);
+      clearDraftButton.hidden = true;
+    }
+  }
+
+  function clearDraft() {
+    const confirmed = window.confirm("確定要清除目前保存在這台裝置的草稿嗎？清除後無法復原。");
+
+    if (!confirmed) {
+      return;
+    }
+
+    window.clearTimeout(saveTimer);
+    form.reset();
+    restoreQuestions([]);
+    newsUrl.value = "";
+    newsText.value = "";
+    switchSource("url", { focus: false, save: false });
+    localStorage.removeItem(DRAFT_KEY);
+    clearMessage();
+    updateDraftStatus("本機草稿已清除");
+    clearDraftButton.hidden = true;
+    newsUrl.focus();
   }
 
   function isValidNewsUrl(value) {
@@ -62,6 +280,14 @@
   }
 
   function validateForm() {
+    if (!subject.value.trim()) {
+      return "請先填寫科目。";
+    }
+
+    if (!curriculumFocus.value.trim()) {
+      return "請先填寫課綱單元重點。";
+    }
+
     if (sourceMode === "url" && !newsUrl.value.trim()) {
       return "請先貼上新聞網址。";
     }
@@ -70,8 +296,12 @@
       return "新聞網址格式看起來不完整，請確認網址以 http:// 或 https:// 開頭。";
     }
 
-    if (sourceMode === "text" && !newsText.value.trim()) {
-      return "請先貼上足以看懂事件的新聞文字。";
+    if (!newsText.value.trim()) {
+      return "請先貼上足以看懂事件的新聞重點。";
+    }
+
+    if (!newsTitle.value.trim()) {
+      return "請填寫新聞標題。";
     }
 
     if (!mediaName.value.trim()) {
@@ -82,6 +312,14 @@
       return "請選擇新聞日期，方便老師查核時效。";
     }
 
+    if (!questionType.value) {
+      return "請選擇題型。";
+    }
+
+    if (!questionCount.value) {
+      return "請選擇題數。";
+    }
+
     if (!difficulty.value) {
       return "請選擇題目難度。";
     }
@@ -89,11 +327,74 @@
     return "";
   }
 
+  function getFilledQuestions() {
+    return getQuestionData().filter((question) => question.stem.trim());
+  }
+
+  function buildPrintSheet(mode) {
+    const questions = getFilledQuestions();
+
+    if (!questions.length) {
+      showMessage("目前沒有可列印的題目，請至少填寫一個題幹。", "error");
+      return false;
+    }
+
+    const isAnswerSheet = mode === "answer";
+    const sheetTitle = isAnswerSheet ? "答案詳解卷" : "試題卷";
+    const sourceText = `${mediaName.value.trim()}｜${publishDate.value || "未填日期"}`;
+
+    printSheet.innerHTML = `
+      <header class="print-header">
+        <p>校園時事命題｜${escapeHtml(questionType.value || "未選題型")}</p>
+        <h1>${escapeHtml(subject.value.trim() || "未填科目")}｜${sheetTitle}</h1>
+        <p>新聞：${escapeHtml(newsTitle.value.trim() || "未填標題")}｜來源：${escapeHtml(sourceText)}</p>
+      </header>
+      <div class="print-questions">
+        ${questions.map((question, index) => `
+          <article class="print-question">
+            <h2>${index + 1}. ${escapeHtml(question.stem.trim())}</h2>
+            <ol class="print-options" type="A">
+              ${question.options.filter((option) => option.trim()).map((option) => `<li>${escapeHtml(option.trim())}</li>`).join("")}
+            </ol>
+            ${isAnswerSheet ? `
+              <div class="print-answer-block">
+                <p><strong>答案：</strong>${escapeHtml(question.answer || "未填")}</p>
+                <p><strong>詳解：</strong>${escapeHtml(question.explanation.trim() || "未填")}</p>
+                <p><strong>出處提醒：</strong>${escapeHtml(question.source.trim() || sourceText)}</p>
+              </div>
+            ` : ""}
+          </article>
+        `).join("")}
+      </div>
+    `;
+    printSheet.hidden = false;
+    document.body.classList.add("is-printing");
+    window.print();
+    return true;
+  }
+
+  function finishPrinting() {
+    document.body.classList.remove("is-printing");
+    printSheet.hidden = true;
+  }
+
   sourceButtons.forEach((button) => {
     button.addEventListener("click", () => switchSource(button.dataset.source));
   });
 
-  form.addEventListener("input", clearMessage);
+  form.addEventListener("input", () => {
+    clearMessage();
+    scheduleDraftSave();
+  });
+
+  form.addEventListener("change", scheduleDraftSave);
+  questionGrid.addEventListener("input", scheduleDraftSave);
+  questionGrid.addEventListener("change", scheduleDraftSave);
+  clearDraftButton.addEventListener("click", clearDraft);
+  window.addEventListener("pagehide", saveDraft);
+  window.addEventListener("afterprint", finishPrinting);
+  printStudentButton.addEventListener("click", () => buildPrintSheet("student"));
+  printAnswerButton.addEventListener("click", () => buildPrintSheet("answer"));
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -104,13 +405,8 @@
       return;
     }
 
-    showMessage("素材與出題設定已通過基本檢查。第一階段畫面完成；AI 出題服務尚未連接，因此目前不會產生題目。", "success");
-    emptyState.innerHTML = `
-      <div class="empty-icon" aria-hidden="true">✓</div>
-      <h3>素材已準備完成</h3>
-      <p>媒體：${escapeHtml(mediaName.value.trim())}｜日期：${escapeHtml(publishDate.value)}｜難度：${escapeHtml(difficulty.value)}</p>
-      <p>真實題目尚未產生，因此列印與下載功能暫不顯示。</p>
-    `;
+    saveDraft();
+    showMessage(`命題條件已通過檢查。已準備 ${escapeHtml(questionCount.value)} 題的「${escapeHtml(questionType.value)}」設定，可在下方 8 個題格中編輯內容。`, "success");
     resultCard.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
@@ -127,5 +423,6 @@
     });
   }
 
-  switchSource("url");
+  renderQuestionSlots();
+  loadDraft();
 })();

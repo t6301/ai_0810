@@ -20,6 +20,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   color-scheme: light;
   scroll-behavior: smooth;
@@ -330,6 +334,15 @@ textarea:focus {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.form-grid--three,
+.settings-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.news-highlight-panel {
+  margin-top: 22px;
+}
+
 .setting-box {
   min-width: 0;
   border: 1px solid var(--line);
@@ -351,6 +364,47 @@ textarea:focus {
 .setting-box span:last-child {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.local-draft-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  background: #f9fbfa;
+}
+
+.local-draft-bar p {
+  margin-bottom: 0;
+}
+
+.draft-status {
+  color: var(--green-900);
+  font-weight: 800;
+}
+
+.draft-status.is-error {
+  color: var(--red-700);
+}
+
+.danger-button {
+  min-height: 42px;
+  flex: 0 0 auto;
+  border: 1px solid #c8736f;
+  border-radius: 10px;
+  padding: 9px 15px;
+  background: white;
+  color: var(--red-700);
+  font-weight: 800;
+}
+
+.danger-button:hover,
+.danger-button:focus-visible {
+  background: var(--red-100);
 }
 
 .action-row {
@@ -416,6 +470,100 @@ textarea:focus {
 
 .result-card {
   scroll-margin-top: 20px;
+}
+
+.question-grid-help {
+  margin-bottom: 18px;
+}
+
+.question-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.question-slot {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  background: #f9fbfa;
+}
+
+.question-slot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.question-slot-header h3 {
+  margin-bottom: 0;
+  color: var(--green-900);
+}
+
+.question-slot-header span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.options-grid,
+.question-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-block: 14px;
+}
+
+.question-slot > label:not(:first-of-type) {
+  margin-top: 12px;
+}
+
+.print-sheet {
+  display: none;
+}
+
+.print-header {
+  margin-bottom: 18px;
+  border-bottom: 2px solid #222;
+  padding-bottom: 12px;
+  text-align: center;
+}
+
+.print-header h1,
+.print-header p {
+  margin-bottom: 4px;
+}
+
+.print-question {
+  margin-bottom: 18px;
+  break-inside: avoid;
+}
+
+.print-question h2 {
+  font-size: 12pt;
+  white-space: pre-wrap;
+}
+
+.print-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 28px;
+  margin: 8px 0;
+  padding-left: 28px;
+}
+
+.print-answer-block {
+  margin-top: 9px;
+  border-left: 3px solid #555;
+  padding: 7px 10px;
+  background: #f2f2f2;
+}
+
+.print-answer-block p {
+  margin-bottom: 3px;
+  white-space: pre-wrap;
 }
 
 .empty-state {
@@ -513,13 +661,21 @@ textarea:focus {
   }
 
   .form-grid--two,
+  .form-grid--three,
   .settings-grid,
-  .review-note ul {
+  .review-note ul,
+  .question-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .options-grid,
+  .question-detail-grid {
     grid-template-columns: 1fr;
   }
 
   .section-heading,
-  .action-row {
+  .action-row,
+  .local-draft-bar {
     align-items: stretch;
     flex-direction: column;
   }
@@ -529,6 +685,10 @@ textarea:focus {
   }
 
   .action-row .primary-button {
+    width: 100%;
+  }
+
+  .danger-button {
     width: 100%;
   }
 
@@ -564,30 +724,25 @@ textarea:focus {
     font-size: 11pt;
   }
 
-  .site-header,
-  .intro-panel,
-  #question-form,
-  .message-box,
-  .result-actions,
-  .review-note,
-  .site-footer,
-  .skip-link {
-    display: none !important;
+  body.is-printing * {
+    visibility: hidden;
   }
 
-  .page-shell {
+  body.is-printing .print-sheet,
+  body.is-printing .print-sheet * {
+    visibility: visible;
+  }
+
+  body.is-printing .print-sheet {
+    display: block !important;
+    position: absolute;
+    inset: 0;
     width: 100%;
+    margin: 0;
     padding: 0;
   }
 
-  .card {
-    border: 0;
-    padding: 0;
-    box-shadow: none;
+  .print-question {
     break-inside: avoid;
-  }
-
-  .section-heading {
-    border-color: #777;
   }
 }
