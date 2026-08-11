@@ -158,10 +158,12 @@
         <div class="action-row">
           <div>
             <p><strong>Gemini 出題：</strong>產生的內容一律是草稿，請老師逐題查核。</p>
+            <p class="field-help"><strong>法律與生活自動備課：</strong>不用貼新聞，AI 會搜尋台灣近一年案例，並整理新聞、官方資料與 YouTube 影片。</p>
             <p class="field-help">金鑰安全存放在 Vercel 的秘密設定，這個瀏覽器不會保存或顯示金鑰。</p>
           </div>
           <div class="result-actions">
             <button class="secondary-button" type="submit">檢查命題條件</button>
+            <button id="auto-law-research" class="primary-button" type="button">一鍵搜尋法律案例並備課</button>
             <button id="generate-draft" class="primary-button" type="button">產生考題草稿</button>
           </div>
         </div>
@@ -184,6 +186,19 @@
         <button id="print-student" type="button" class="secondary-button">列印試題卷</button>
         <button id="print-answer" type="button" class="secondary-button">列印答案詳解卷</button>
       </div>
+    </section>
+
+    <section id="teaching-resources" class="card" aria-labelledby="teaching-resources-title" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="step-label">延伸教材</p>
+          <h2 id="teaching-resources-title">近一年案例與課程資源</h2>
+        </div>
+        <span class="draft-badge">AI 搜尋｜待老師查核</span>
+      </div>
+      <p id="research-summary" class="field-help"></p>
+      <div id="resource-list" class="question-grid"></div>
+      <p class="field-help">請開啟連結確認標題、日期、內容與著作權；新聞或影片日後可能下架。</p>
     </section>
 
     <section id="cloud-records" class="card" aria-labelledby="cloud-records-title" hidden>

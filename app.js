@@ -24,6 +24,10 @@
   const draftStatus = document.querySelector("#draft-status");
   const clearDraftButton = document.querySelector("#clear-draft");
   const generateDraftButton = document.querySelector("#generate-draft");
+  const autoLawResearchButton = document.querySelector("#auto-law-research");
+  const teachingResourcesCard = document.querySelector("#teaching-resources");
+  const researchSummary = document.querySelector("#research-summary");
+  const resourceList = document.querySelector("#resource-list");
   const authStatus = document.querySelector("#auth-status");
   const googleSignInButton = document.querySelector("#google-sign-in");
   const googleSignOutButton = document.querySelector("#google-sign-out");
@@ -44,6 +48,7 @@
   let firebaseFirestoreSdk = null;
   let currentFirebaseUser = null;
   let currentCloudExamId = "";
+  let teachingResources = null;
 
   function updateAuthDisplay(user) {
     currentFirebaseUser = user || null;
@@ -204,6 +209,7 @@
       questionCount: questionCount.value,
       difficulty: difficulty.value,
       questions: getQuestionData(),
+      teachingResources,
       savedAt: new Date().toISOString()
     };
   }
@@ -226,7 +232,8 @@
         mediaName: mediaName.value,
         publishDate: publishDate.value
       },
-      questions: getQuestionData()
+      questions: getQuestionData(),
+      teachingResources
     };
   }
 
@@ -371,6 +378,7 @@
     questionCount.value = [3, 5].includes(count) ? String(count) : (conditions.questionCount || "");
     renderQuestionSlots(count);
     restoreQuestions(questions);
+    renderTeachingResources(data.teachingResources);
     switchSource(conditions.sourceMode === "text" ? "text" : "url", { focus: false, save: false });
     saveDraft();
   }
@@ -531,6 +539,117 @@
     return typeof value === "string" ? value.trim() : "";
   }
 
+  function safeExternalUrl(value) {
+    try {
+      const url = new URL(cleanValue(value));
+      return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function normalizeResourceItems(items) {
+    if (!Array.isArray(items)) {
+      return [];
+    }
+
+    const seenUrls = new Set();
+    return items.reduce((result, item) => {
+      const url = safeExternalUrl(item?.url);
+      const title = cleanValue(item?.title);
+      if (!url || !title || seenUrls.has(url)) {
+        return result;
+      }
+
+      seenUrls.add(url);
+      result.push({
+        title,
+        publisher: cleanValue(item?.publisher),
+        date: cleanValue(item?.date),
+        summary: cleanValue(item?.summary),
+        url
+      });
+      return result;
+    }, []);
+  }
+
+  function renderTeachingResources(data) {
+    const normalized = data && typeof data === "object" ? {
+      topic: cleanValue(data.topic),
+      summary: cleanValue(data.summary),
+      researchedAt: cleanValue(data.researchedAt),
+      rangeStart: cleanValue(data.rangeStart),
+      rangeEnd: cleanValue(data.rangeEnd),
+      official: normalizeResourceItems(data.official),
+      news: normalizeResourceItems(data.news),
+      videos: normalizeResourceItems(data.videos),
+      citations: normalizeResourceItems(data.citations)
+    } : null;
+
+    const groups = normalized ? [
+      ["官方法規與權利救濟資料", normalized.official],
+      ["台灣新聞案例", normalized.news],
+      ["YouTube 延伸影片", normalized.videos],
+      ["Gemini 網路搜尋引用", normalized.citations]
+    ].filter(([, items]) => items.length > 0) : [];
+
+    if (!normalized || groups.length === 0) {
+      teachingResources = null;
+      teachingResourcesCard.hidden = true;
+      researchSummary.textContent = "";
+      resourceList.innerHTML = "";
+      return;
+    }
+
+    teachingResources = normalized;
+    const range = normalized.rangeStart && normalized.rangeEnd
+      ? `｜搜尋期間：${normalized.rangeStart} 至 ${normalized.rangeEnd}`
+      : "";
+    researchSummary.textContent = `${normalized.topic || "法律與生活近期案例"}${range}。${normalized.summary}`;
+    resourceList.innerHTML = groups.map(([heading, items]) => `
+      <article class="question-slot">
+        <div class="question-slot-header">
+          <h3>${escapeHtml(heading)}</h3>
+          <span>${items.length} 筆｜待查核</span>
+        </div>
+        <ul>
+          ${items.map((item) => `
+            <li>
+              <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.title)}</a>
+              <p class="field-help">${escapeHtml([item.publisher, item.date].filter(Boolean).join("｜") || "來源日期待確認")}</p>
+              ${item.summary ? `<p>${escapeHtml(item.summary)}</p>` : ""}
+            </li>
+          `).join("")}
+        </ul>
+      </article>
+    `).join("");
+    teachingResourcesCard.hidden = false;
+  }
+
+  function buildTeachingResourcesPrintHtml() {
+    if (!teachingResources) {
+      return "";
+    }
+
+    const items = [
+      ...teachingResources.official,
+      ...teachingResources.news,
+      ...teachingResources.videos
+    ];
+    if (!items.length) {
+      return "";
+    }
+
+    return `
+      <section class="print-answer-block">
+        <h2>延伸教材連結｜老師查核後使用</h2>
+        <ul>
+          ${items.map((item) => `<li>${escapeHtml(item.title)}｜${escapeHtml(item.url)}</li>`).join("")}
+        </ul>
+      </section>
+    `;
+  }
+
   function formatSavedTime(dateValue) {
     return new Intl.DateTimeFormat("zh-TW", {
       hour: "2-digit",
@@ -592,6 +711,7 @@
       const savedQuestions = Array.isArray(draft.questions) ? draft.questions.filter(hasQuestionContent) : [];
       renderQuestionSlots(savedQuestions.length);
       restoreQuestions(savedQuestions);
+      renderTeachingResources(draft.teachingResources);
       switchSource(draft.sourceMode === "text" ? "text" : "url", { focus: false, save: false });
       updateDraftStatus("已恢復上次保存在這台裝置的草稿");
       clearDraftButton.hidden = false;
@@ -614,6 +734,7 @@
     window.clearTimeout(saveTimer);
     form.reset();
     renderQuestionSlots(0);
+    renderTeachingResources(null);
     newsUrl.value = "";
     newsText.value = "";
     switchSource("url", { focus: false, save: false });
@@ -719,6 +840,88 @@
       return typeof result.error === "string" ? result.error : "Gemini 暫時無法產生題目，請稍後再試。";
     } catch {
       return "Gemini 暫時無法產生題目，請稍後再試。";
+    }
+  }
+
+  async function generateLawResearchDrafts() {
+    clearMessage();
+
+    if (window.location.protocol === "file:") {
+      showMessage("法律案例自動搜尋需要從正式網站開啟；直接雙擊檔案仍可編輯、保存與列印。", "error");
+      return;
+    }
+
+    if (questionSlots.length > 0) {
+      showMessage("目前已有題目草稿，為避免覆蓋老師修改過的內容，請先使用「清除目前草稿」。", "error");
+      return;
+    }
+
+    const hasExistingMaterial = [newsUrl.value, newsText.value, newsTitle.value, mediaName.value, publishDate.value]
+      .some((value) => cleanValue(value));
+    if (hasExistingMaterial && !window.confirm("自動備課會以新搜尋結果取代目前的新聞素材。確定要繼續嗎？")) {
+      return;
+    }
+
+    questionType.value = questionType.value || "單選";
+    questionCount.value = questionCount.value || "5";
+    difficulty.value = difficulty.value || "中等";
+    const requestedCount = Number(questionCount.value);
+
+    autoLawResearchButton.disabled = true;
+    generateDraftButton.disabled = true;
+    autoLawResearchButton.textContent = "正在搜尋近一年案例…";
+    showMessage("Gemini 正在搜尋台灣近一年法律案例、官方資料、新聞與 YouTube 影片，可能需要一些時間，請勿關閉頁面。", "success");
+
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          autoResearch: true,
+          questionType: questionType.value,
+          questionCount: requestedCount,
+          difficulty: difficulty.value
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const result = await response.json();
+      const lesson = result.lesson && typeof result.lesson === "object" ? result.lesson : null;
+      if (!lesson || !Array.isArray(result.questions) || result.questions.length !== requestedCount) {
+        throw new Error("Gemini 回傳的自動備課資料不完整，請再試一次。");
+      }
+
+      subject.value = cleanValue(lesson.subject) || "法律與生活";
+      curriculumFocus.value = cleanValue(lesson.curriculumFocus);
+      newsUrl.value = safeExternalUrl(lesson.newsUrl);
+      newsText.value = cleanValue(lesson.newsText);
+      newsTitle.value = cleanValue(lesson.newsTitle) || "近一年法律與生活案例彙整";
+      mediaName.value = cleanValue(lesson.mediaName) || "AI 網路搜尋（多來源）";
+      publishDate.value = cleanValue(lesson.publishDate);
+      examTitle.value = examTitle.value.trim() || `${newsTitle.value}｜${difficulty.value}`;
+      switchSource(newsUrl.value ? "url" : "text", { focus: false, save: false });
+
+      renderQuestionSlots(requestedCount);
+      const filledCount = fillGeneratedQuestions(result.questions);
+      if (filledCount !== requestedCount) {
+        renderQuestionSlots(0);
+        throw new Error("題目填入不完整，原本資料未被覆蓋，請再試一次。");
+      }
+
+      renderTeachingResources(result.resources);
+      saveDraft();
+      showMessage(`已完成 ${filledCount} 題法律與生活草稿及延伸教材。請逐題開啟來源，查核法律時效、事實、著作權、偏誤與答案唯一性。`, "success");
+      resultCard.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "法律案例自動搜尋失敗，請稍後再試。";
+      showMessage(message, "error");
+    } finally {
+      autoLawResearchButton.disabled = false;
+      generateDraftButton.disabled = false;
+      autoLawResearchButton.textContent = "一鍵搜尋法律案例並備課";
     }
   }
 
@@ -828,6 +1031,7 @@
           </article>
         `).join("")}
       </div>
+      ${isAnswerSheet ? buildTeachingResourcesPrintHtml() : ""}
     `;
     printSheet.hidden = false;
     document.body.classList.add("is-printing");
@@ -858,6 +1062,7 @@
   printStudentButton.addEventListener("click", () => buildPrintSheet("student"));
   printAnswerButton.addEventListener("click", () => buildPrintSheet("answer"));
   generateDraftButton.addEventListener("click", generateQuestionDrafts);
+  autoLawResearchButton.addEventListener("click", generateLawResearchDrafts);
   googleSignInButton.addEventListener("click", handleGoogleSignIn);
   googleSignOutButton.addEventListener("click", handleGoogleSignOut);
   saveCloudExamButton.addEventListener("click", () => saveCloudExam(false));
