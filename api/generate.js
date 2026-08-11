@@ -1,6 +1,6 @@
 "use strict";
 
-const MODEL = "gemini-3.6-flash";
+const MODEL = "gemini-2.5-flash";
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 const LAW_SUBJECT = "法律與生活";
 const LAW_CURRICULUM = `一、法律概念：認識我國憲法、法律、命令的體系及其與行政、刑事、民事責任的關係；了解法院系統、訴訟與調解程序。
