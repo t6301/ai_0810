@@ -43,6 +43,7 @@
   const cloudRecordList = document.querySelector("#cloud-record-list");
 
   const DRAFT_KEY = "current-event-question-draft-v1";
+  const AUTH_REDIRECT_KEY = "google-auth-redirect-pending-v1";
   let sourceMode = "url";
   let saveTimer;
   let questionSlots = [];
@@ -81,6 +82,7 @@
       "auth/popup-closed-by-user": "您已關閉 Google 登入視窗，本機草稿仍會保留。",
       "auth/cancelled-popup-request": "前一次登入尚未完成，請稍後再試。",
       "auth/redirect-cancelled-by-user": "您已取消 Google 登入，本機草稿仍會保留。",
+      "auth/web-storage-unsupported": "瀏覽器封鎖了登入所需的網站儲存空間，請確認不是無痕模式後再試。",
       "auth/unauthorized-domain": "這個測試網址尚未加入 Firebase 授權網域，請先到 Firebase Authentication 設定。",
       "auth/operation-not-allowed": "Firebase 尚未啟用 Google 登入，請先到 Authentication 的登入方式開啟 Google。",
       "auth/network-request-failed": "目前無法連接 Google 登入服務，請檢查網路後再試。"
@@ -117,7 +119,22 @@
       loadedAuthSdk.onAuthStateChanged(firebaseAuth, updateAuthDisplay, () => {
         authStatus.textContent = "無法確認登入狀態，請重新整理頁面。";
       });
-      await loadedAuthSdk.getRedirectResult(firebaseAuth);
+
+      let wasRedirecting = false;
+      try {
+        wasRedirecting = sessionStorage.getItem(AUTH_REDIRECT_KEY) === "true";
+        const redirectResult = await loadedAuthSdk.getRedirectResult(firebaseAuth);
+        sessionStorage.removeItem(AUTH_REDIRECT_KEY);
+        if (redirectResult?.user) {
+          updateAuthDisplay(redirectResult.user);
+          showMessage("Google 登入成功，已恢復這台電腦的草稿。", "success");
+        } else if (wasRedirecting && !firebaseAuth.currentUser) {
+          showMessage("Google 已返回網站，但登入資料未成功帶回。請確認網址是 ai-0810.vercel.app 後再試一次。", "error");
+        }
+      } catch (error) {
+        sessionStorage.removeItem(AUTH_REDIRECT_KEY);
+        showMessage(getAuthErrorMessage(error), "error");
+      }
     } catch {
       authStatus.textContent = "Google 登入尚未完成設定｜本機功能仍可使用";
       googleSignInButton.disabled = true;
@@ -134,8 +151,13 @@
     googleSignInButton.textContent = "正在前往 Google…";
 
     try {
-      await firebaseAuthSdk.signInWithRedirect(firebaseAuth, new firebaseAuthSdk.GoogleAuthProvider());
+      saveDraft();
+      sessionStorage.setItem(AUTH_REDIRECT_KEY, "true");
+      const provider = new firebaseAuthSdk.GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      await firebaseAuthSdk.signInWithRedirect(firebaseAuth, provider);
     } catch (error) {
+      sessionStorage.removeItem(AUTH_REDIRECT_KEY);
       showMessage(getAuthErrorMessage(error), "error");
       googleSignInButton.disabled = false;
       googleSignInButton.textContent = "使用 Google 登入";

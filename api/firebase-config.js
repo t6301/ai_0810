@@ -1,5 +1,7 @@
 "use strict";
 
+const PRODUCTION_AUTH_DOMAIN = "ai-0810.vercel.app";
+
 function sendJson(response, status, body) {
   response.status(status).setHeader("Content-Type", "application/json; charset=utf-8");
   response.setHeader("Cache-Control", "no-store");
@@ -13,9 +15,13 @@ module.exports = function handler(request, response) {
     return;
   }
 
+  const forwardedHost = String(request.headers?.["x-forwarded-host"] || request.headers?.host || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
   const firebaseConfig = {
     apiKey: process.env.FIREBASE_API_KEY,
-    authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+    authDomain: forwardedHost === PRODUCTION_AUTH_DOMAIN ? PRODUCTION_AUTH_DOMAIN : process.env.FIREBASE_AUTH_DOMAIN,
     projectId: process.env.FIREBASE_PROJECT_ID,
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
     messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
