@@ -25,6 +25,10 @@
   const clearDraftButton = document.querySelector("#clear-draft");
   const generateDraftButton = document.querySelector("#generate-draft");
   const autoLawResearchButton = document.querySelector("#auto-law-research");
+  const lawCaseResultsCard = document.querySelector("#law-case-results");
+  const lawCaseStatus = document.querySelector("#law-case-status");
+  const lawCaseList = document.querySelector("#law-case-list");
+  const generateSelectedCaseButton = document.querySelector("#generate-selected-case");
   const teachingResourcesCard = document.querySelector("#teaching-resources");
   const researchSummary = document.querySelector("#research-summary");
   const resourceList = document.querySelector("#resource-list");
@@ -49,6 +53,8 @@
   let currentFirebaseUser = null;
   let currentCloudExamId = "";
   let teachingResources = null;
+  let lawCaseCandidates = [];
+  let selectedLawCase = null;
 
   function updateAuthDisplay(user) {
     currentFirebaseUser = user || null;
@@ -573,6 +579,63 @@
     }, []);
   }
 
+  function normalizeLawCaseItems(items) {
+    if (!Array.isArray(items)) {
+      return [];
+    }
+
+    const seenUrls = new Set();
+    return items.reduce((result, item) => {
+      const url = safeExternalUrl(item?.url);
+      const title = cleanValue(item?.title);
+      const publisher = cleanValue(item?.publisher);
+      const date = cleanValue(item?.date);
+      const summary = cleanValue(item?.summary);
+      if (!url || !title || !publisher || !date || !summary || seenUrls.has(url)) {
+        return result;
+      }
+
+      seenUrls.add(url);
+      result.push({
+        title,
+        publisher,
+        date,
+        summary,
+        url,
+        legalTopic: cleanValue(item?.legalTopic)
+      });
+      return result;
+    }, []);
+  }
+
+  function renderLawCaseCandidates(items, rangeStart, rangeEnd) {
+    lawCaseCandidates = normalizeLawCaseItems(items);
+    selectedLawCase = null;
+    generateSelectedCaseButton.disabled = true;
+
+    if (lawCaseCandidates.length === 0) {
+      lawCaseResultsCard.hidden = true;
+      lawCaseList.innerHTML = "";
+      return;
+    }
+
+    const range = rangeStart && rangeEnd ? `${rangeStart} 至 ${rangeEnd}` : "近一年";
+    lawCaseStatus.textContent = `搜尋期間：${range}｜共找到 ${lawCaseCandidates.length} 則候選新聞。請開啟原文查核後選擇一則。`;
+    lawCaseList.innerHTML = lawCaseCandidates.map((item, index) => `
+      <article class="question-slot">
+        <div class="question-slot-header">
+          <h3><label><input type="radio" name="law-case-choice" value="${index}"> ${escapeHtml(item.title)}</label></h3>
+          <span>${escapeHtml(item.legalTopic || "法律與生活")}</span>
+        </div>
+        <p class="field-help">${escapeHtml(item.publisher)}｜${escapeHtml(item.date)}</p>
+        <p>${escapeHtml(item.summary)}</p>
+        <p><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">開啟新聞原文確認</a></p>
+      </article>
+    `).join("");
+    lawCaseResultsCard.hidden = false;
+    lawCaseResultsCard.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   function renderTeachingResources(data) {
     const normalized = data && typeof data === "object" ? {
       topic: cleanValue(data.topic),
@@ -843,11 +906,54 @@
     }
   }
 
-  async function generateLawResearchDrafts() {
+  async function searchLawCases() {
     clearMessage();
 
     if (window.location.protocol === "file:") {
-      showMessage("法律案例自動搜尋需要從正式網站開啟；直接雙擊檔案仍可編輯、保存與列印。", "error");
+      showMessage("法律新聞搜尋需要從正式網站開啟；直接雙擊檔案仍可編輯、保存與列印。", "error");
+      return;
+    }
+
+    autoLawResearchButton.disabled = true;
+    generateSelectedCaseButton.disabled = true;
+    autoLawResearchButton.textContent = "正在搜尋新聞…";
+    showMessage("Gemini 正在搜尋台灣近一年法律新聞，可能需要一些時間，請勿關閉頁面。", "success");
+
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          researchMode: "search"
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const result = await response.json();
+      if (!Array.isArray(result.cases) || result.cases.length === 0) {
+        throw new Error("Gemini 沒有回傳可選擇的新聞案例，請再試一次。");
+      }
+
+      renderLawCaseCandidates(result.cases, result.rangeStart, result.rangeEnd);
+      showMessage(`已找到 ${lawCaseCandidates.length} 則候選新聞。請先開啟原文查核，再選擇一則案例。`, "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "法律新聞搜尋失敗，請稍後再試。";
+      showMessage(message, "error");
+    } finally {
+      autoLawResearchButton.disabled = false;
+      generateSelectedCaseButton.disabled = !selectedLawCase;
+      autoLawResearchButton.textContent = "重新搜尋近一年法律新聞";
+    }
+  }
+
+  async function generateSelectedLawCaseDrafts() {
+    clearMessage();
+
+    if (!selectedLawCase) {
+      showMessage("請先從搜尋結果選擇一則新聞案例。", "error");
       return;
     }
 
@@ -858,7 +964,7 @@
 
     const hasExistingMaterial = [newsUrl.value, newsText.value, newsTitle.value, mediaName.value, publishDate.value]
       .some((value) => cleanValue(value));
-    if (hasExistingMaterial && !window.confirm("自動備課會以新搜尋結果取代目前的新聞素材。確定要繼續嗎？")) {
+    if (hasExistingMaterial && !window.confirm("將以您選取的案例取代目前新聞素材。確定要繼續嗎？")) {
       return;
     }
 
@@ -869,15 +975,17 @@
 
     autoLawResearchButton.disabled = true;
     generateDraftButton.disabled = true;
-    autoLawResearchButton.textContent = "正在搜尋近一年案例…";
-    showMessage("Gemini 正在搜尋台灣近一年法律案例、官方資料、新聞與 YouTube 影片，可能需要一些時間，請勿關閉頁面。", "success");
+    generateSelectedCaseButton.disabled = true;
+    generateSelectedCaseButton.textContent = "正在依選取案例出題…";
+    showMessage("Gemini 正在查核選取案例並整理題目、官方資料與 YouTube 影片，請勿關閉頁面。", "success");
 
     try {
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          autoResearch: true,
+          researchMode: "generate",
+          selectedCase: selectedLawCase,
           questionType: questionType.value,
           questionCount: requestedCount,
           difficulty: difficulty.value
@@ -891,16 +999,16 @@
       const result = await response.json();
       const lesson = result.lesson && typeof result.lesson === "object" ? result.lesson : null;
       if (!lesson || !Array.isArray(result.questions) || result.questions.length !== requestedCount) {
-        throw new Error("Gemini 回傳的自動備課資料不完整，請再試一次。");
+        throw new Error("Gemini 回傳的案例教材不完整，請再試一次。");
       }
 
       subject.value = cleanValue(lesson.subject) || "法律與生活";
       curriculumFocus.value = cleanValue(lesson.curriculumFocus);
-      newsUrl.value = safeExternalUrl(lesson.newsUrl);
-      newsText.value = cleanValue(lesson.newsText);
-      newsTitle.value = cleanValue(lesson.newsTitle) || "近一年法律與生活案例彙整";
-      mediaName.value = cleanValue(lesson.mediaName) || "AI 網路搜尋（多來源）";
-      publishDate.value = cleanValue(lesson.publishDate);
+      newsUrl.value = safeExternalUrl(lesson.newsUrl) || selectedLawCase.url;
+      newsText.value = cleanValue(lesson.newsText) || selectedLawCase.summary;
+      newsTitle.value = cleanValue(lesson.newsTitle) || selectedLawCase.title;
+      mediaName.value = cleanValue(lesson.mediaName) || selectedLawCase.publisher;
+      publishDate.value = cleanValue(lesson.publishDate) || selectedLawCase.date;
       examTitle.value = examTitle.value.trim() || `${newsTitle.value}｜${difficulty.value}`;
       switchSource(newsUrl.value ? "url" : "text", { focus: false, save: false });
 
@@ -913,15 +1021,16 @@
 
       renderTeachingResources(result.resources);
       saveDraft();
-      showMessage(`已完成 ${filledCount} 題法律與生活草稿及延伸教材。請逐題開啟來源，查核法律時效、事實、著作權、偏誤與答案唯一性。`, "success");
+      showMessage(`已依您選取的新聞完成 ${filledCount} 題草稿及延伸教材。請查核法律時效、事實、著作權、偏誤與答案唯一性。`, "success");
       resultCard.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "法律案例自動搜尋失敗，請稍後再試。";
+      const message = error instanceof Error ? error.message : "依選取案例產生考題失敗，請稍後再試。";
       showMessage(message, "error");
     } finally {
       autoLawResearchButton.disabled = false;
       generateDraftButton.disabled = false;
-      autoLawResearchButton.textContent = "一鍵搜尋法律案例並備課";
+      generateSelectedCaseButton.disabled = !selectedLawCase;
+      generateSelectedCaseButton.textContent = "依選取案例產生考題";
     }
   }
 
@@ -1062,7 +1171,20 @@
   printStudentButton.addEventListener("click", () => buildPrintSheet("student"));
   printAnswerButton.addEventListener("click", () => buildPrintSheet("answer"));
   generateDraftButton.addEventListener("click", generateQuestionDrafts);
-  autoLawResearchButton.addEventListener("click", generateLawResearchDrafts);
+  autoLawResearchButton.addEventListener("click", searchLawCases);
+  generateSelectedCaseButton.addEventListener("click", generateSelectedLawCaseDrafts);
+  lawCaseList.addEventListener("change", (event) => {
+    const choice = event.target.closest('input[name="law-case-choice"]');
+    if (!choice) {
+      return;
+    }
+
+    selectedLawCase = lawCaseCandidates[Number(choice.value)] || null;
+    generateSelectedCaseButton.disabled = !selectedLawCase;
+    if (selectedLawCase) {
+      lawCaseStatus.textContent = `已選擇：${selectedLawCase.title}｜請確認原文後再產生考題。`;
+    }
+  });
   googleSignInButton.addEventListener("click", handleGoogleSignIn);
   googleSignOutButton.addEventListener("click", handleGoogleSignOut);
   saveCloudExamButton.addEventListener("click", () => saveCloudExam(false));

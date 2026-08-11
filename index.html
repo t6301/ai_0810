@@ -158,17 +158,32 @@
         <div class="action-row">
           <div>
             <p><strong>Gemini 出題：</strong>產生的內容一律是草稿，請老師逐題查核。</p>
-            <p class="field-help"><strong>法律與生活自動備課：</strong>不用貼新聞，AI 會搜尋台灣近一年案例，並整理新聞、官方資料與 YouTube 影片。</p>
+            <p class="field-help"><strong>法律與生活新聞搜尋：</strong>先搜尋台灣近一年案例，由老師選定一則新聞後，再產生題目與延伸教材。</p>
             <p class="field-help">金鑰安全存放在 Vercel 的秘密設定，這個瀏覽器不會保存或顯示金鑰。</p>
           </div>
           <div class="result-actions">
             <button class="secondary-button" type="submit">檢查命題條件</button>
-            <button id="auto-law-research" class="primary-button" type="button">一鍵搜尋法律案例並備課</button>
+            <button id="auto-law-research" class="primary-button" type="button">搜尋近一年法律新聞</button>
             <button id="generate-draft" class="primary-button" type="button">產生考題草稿</button>
           </div>
         </div>
       </section>
     </form>
+
+    <section id="law-case-results" class="card" aria-labelledby="law-case-results-title" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="step-label">案例選擇</p>
+          <h2 id="law-case-results-title">請選擇要使用的新聞案例</h2>
+        </div>
+        <span class="draft-badge">近一年｜待老師查核</span>
+      </div>
+      <p id="law-case-status" class="field-help">請先搜尋近期新聞。</p>
+      <div id="law-case-list" class="question-grid"></div>
+      <div class="result-actions">
+        <button id="generate-selected-case" class="primary-button" type="button" disabled>依選取案例產生考題</button>
+      </div>
+    </section>
 
     <section id="result-card" class="card result-card" aria-labelledby="result-title">
       <div class="section-heading">
