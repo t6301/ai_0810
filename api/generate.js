@@ -3,6 +3,7 @@
 const MODEL = "gemini-3.5-flash-lite";
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 const GOOGLE_NEWS_RSS = "https://news.google.com/rss/search";
+const MAX_REQUEST_BYTES = 64 * 1024;
 const LAW_SUBJECT = "法律與生活";
 const LAW_NEWS_CATEGORIES = [
   { topic: "刑事犯罪與青少年", quota: 2, query: "台灣 (少年 OR 詐欺 OR 車手 OR 校園霸凌) 法律" },
@@ -21,6 +22,16 @@ const LAW_CURRICULUM = `一、法律概念：認識我國憲法、法律、命�
 function sendJson(response, status, body) {
   response.status(status).setHeader("Content-Type", "application/json; charset=utf-8");
   response.end(JSON.stringify(body));
+}
+
+function requestIsTooLarge(request, body) {
+  const contentLength = Number(request.headers?.["content-length"] || 0);
+  if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES) return true;
+  try {
+    return Buffer.byteLength(JSON.stringify(body), "utf8") > MAX_REQUEST_BYTES;
+  } catch {
+    return true;
+  }
 }
 
 function cleanText(value, maximumLength) {
@@ -566,6 +577,10 @@ module.exports = async function handler(request, response) {
   }
 
   const body = request.body && typeof request.body === "object" ? request.body : {};
+  if (requestIsTooLarge(request, body)) {
+    sendJson(response, 413, { error: "送出的內容太大，請縮短新聞文字後再試一次。" });
+    return;
+  }
   const selectedCase = body.selectedCase && typeof body.selectedCase === "object" ? body.selectedCase : {};
   const input = {
     researchMode: ["search", "generate"].includes(body.researchMode)

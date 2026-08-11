@@ -9,3 +9,11 @@ secrets.*
 
 .vercel
 .env*
+
+# 暫存檔與系統產生檔案
+*.tmp
+*.temp
+*.log
+~$*
+.DS_Store
+Thumbs.db
