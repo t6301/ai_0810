@@ -4,6 +4,14 @@ const MODEL = "gemini-3.5-flash-lite";
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 const GOOGLE_NEWS_RSS = "https://news.google.com/rss/search";
 const LAW_SUBJECT = "法律與生活";
+const LAW_NEWS_CATEGORIES = [
+  { topic: "刑事犯罪與青少年", quota: 2, query: "台灣 少年 詐欺 車手 校園霸凌 刑事犯罪" },
+  { topic: "勞動與職場權益", quota: 2, query: "台灣 勞工 工資 加班 打工 職災 勞資爭議" },
+  { topic: "消費契約與財產", quota: 2, query: "台灣 消費糾紛 契約 網購 租屋 侵權 賠償" },
+  { topic: "家庭、性別與繼承", quota: 2, query: "台灣 婚姻 家暴 性別平等 繼承 遺囑 法律" },
+  { topic: "網路、隱私與智慧財產", quota: 1, query: "台灣 網路言論 個資 隱私 著作權 商標 法律" },
+  { topic: "行政法與權利救濟", quota: 1, query: "台灣 行政處分 訴願 行政訴訟 權利救濟" }
+];
 const LAW_CURRICULUM = `一、法律概念：認識我國憲法、法律、命令的體系及其與行政、刑事、民事責任的關係；了解法院系統、訴訟與調解程序。
 二、公法與生活：理解刑法的故意、過失、阻卻違法事由、犯罪成立要件與常見犯罪；聚焦青少年網路言論、詐欺車手、校園霸凌及少年事件處理法；理解行政處分、訴願與行政訴訟。
 三、私法與生活：認識滿 18 歲成年、行為能力、買賣契約、消費糾紛、侵權損害賠償、婚姻、性別平等、家庭暴力、繼承與遺囑；理解著作權、商標權、專利權及數位下載、重製、仿冒品風險。
@@ -76,13 +84,16 @@ function stripHtml(value) {
 
 function classifyLegalTopic(title) {
   const text = cleanText(title, 500);
-  if (/勞工|工資|加班|職災|雇主|工會|勞資|打工|勞動/.test(text)) return "勞動關係法制與生活";
-  if (/少年|青少年|校園|霸凌|詐欺|車手|刑事|犯罪|警|檢/.test(text)) return "公法、刑事法律與青少年";
-  if (/消費|契約|買賣|侵權|賠償|婚姻|家庭|繼承|著作權|商標|專利/.test(text)) return "私法、消費與智慧財產";
-  return "法律概念與權利救濟";
+  if (/勞工|工資|加班|職災|雇主|工會|勞資|打工|勞動/.test(text)) return "勞動與職場權益";
+  if (/婚姻|家暴|家庭|性別|繼承|遺囑|親權|扶養/.test(text)) return "家庭、性別與繼承";
+  if (/消費|契約|買賣|網購|租屋|侵權|賠償/.test(text)) return "消費契約與財產";
+  if (/著作權|商標|專利|個資|隱私|網路言論|深偽/.test(text)) return "網路、隱私與智慧財產";
+  if (/行政處分|訴願|行政訴訟|政府|自治條例|裁罰/.test(text)) return "行政法與權利救濟";
+  if (/少年|青少年|校園|霸凌|詐欺|車手|刑事|犯罪|警|檢/.test(text)) return "刑事犯罪與青少年";
+  return "法律概念與司法程序";
 }
 
-function parseGoogleNewsFeed(xml, range) {
+function parseGoogleNewsFeed(xml, range, assignedTopic = "") {
   const items = String(xml || "").match(/<item>[\s\S]*?<\/item>/gi) || [];
   return items.map((block) => {
     const fullTitle = cleanText(readXmlTag(block, "title"), 500);
@@ -94,7 +105,7 @@ function parseGoogleNewsFeed(xml, range) {
     const published = new Date(readXmlTag(block, "pubDate"));
     const date = Number.isNaN(published.getTime()) ? "" : formatTaiwanDate(published);
     const description = stripHtml(readXmlTag(block, "description"));
-    const legalTopic = classifyLegalTopic(title);
+    const legalTopic = assignedTopic || classifyLegalTopic(title);
     return {
       title,
       publisher,
@@ -108,30 +119,71 @@ function parseGoogleNewsFeed(xml, range) {
   }).filter((item) => item.title && item.publisher && item.url && isDateInRange(item.date, range.start, range.end));
 }
 
+function headlineBigrams(title) {
+  const normalized = cleanText(title, 500)
+    .toLocaleLowerCase("zh-TW")
+    .replace(/[\s\p{P}\p{S}]+/gu, "");
+  if (normalized.length < 2) return new Set(normalized ? [normalized] : []);
+  const characters = Array.from(normalized);
+  return new Set(characters.slice(0, -1).map((character, index) => character + characters[index + 1]));
+}
+
+function isSimilarNewsCase(candidate, selectedCases) {
+  const candidateTitle = headlineBigrams(candidate.title);
+  return selectedCases.some((selected) => {
+    if (candidate.url === selected.url) return true;
+    const selectedTitle = headlineBigrams(selected.title);
+    if (!candidateTitle.size || !selectedTitle.size) return false;
+    let overlap = 0;
+    candidateTitle.forEach((part) => {
+      if (selectedTitle.has(part)) overlap += 1;
+    });
+    return overlap / Math.min(candidateTitle.size, selectedTitle.size) >= 0.68;
+  });
+}
+
+function selectDiverseCases(categoryFeeds, limit = 10) {
+  const selected = [];
+  categoryFeeds.forEach(({ category, items }) => {
+    let categoryCount = 0;
+    for (const item of items) {
+      if (categoryCount >= category.quota) break;
+      if (isSimilarNewsCase(item, selected)) continue;
+      selected.push(item);
+      categoryCount += 1;
+    }
+  });
+
+  const remaining = categoryFeeds
+    .flatMap(({ items }) => items)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  for (const item of remaining) {
+    if (selected.length >= limit) break;
+    if (!isSimilarNewsCase(item, selected)) selected.push(item);
+  }
+  return selected.sort((a, b) => b.date.localeCompare(a.date)).slice(0, limit);
+}
+
 async function searchGoogleNewsCases(range, customQuery = "") {
-  const queries = customQuery ? [
-    customQuery,
-    `${customQuery} 台灣 法律`,
-    `${customQuery} 權利 救濟`
-  ] : [
-    "台灣 青少年 詐欺 車手 校園霸凌 法律",
-    "台灣 勞工 打工 工資 職災 勞資爭議",
-    "台灣 消費 契約 侵權 家庭 法律",
-    "台灣 著作權 商標 網路言論 法律"
-  ];
-  const feeds = await Promise.allSettled(queries.map(async (query) => {
+  const categories = customQuery
+    ? [
+        { topic: "", quota: 10, query: customQuery },
+        { topic: "", quota: 10, query: `${customQuery} 台灣 法律` },
+        { topic: "", quota: 10, query: `${customQuery} 權利 救濟` }
+      ]
+    : LAW_NEWS_CATEGORIES;
+  const feeds = await Promise.allSettled(categories.map(async (category) => {
+    const query = category.query;
     const url = `${GOOGLE_NEWS_RSS}?q=${encodeURIComponent(`${query} when:1y`)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
     const result = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 TeacherNewsTool/1.0" } });
     if (!result.ok) throw new Error(`Google News ${result.status}`);
-    return parseGoogleNewsFeed(await result.text(), range);
+    return parseGoogleNewsFeed(await result.text(), range, category.topic);
   }));
-  const seen = new Set();
-  return feeds.flatMap((feed) => feed.status === "fulfilled" ? feed.value : []).filter((item) => {
-    const key = item.title.toLocaleLowerCase("zh-TW");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
+  const categoryFeeds = feeds.map((feed, index) => ({
+    category: categories[index],
+    items: feed.status === "fulfilled" ? feed.value.sort((a, b) => b.date.localeCompare(a.date)) : []
+  }));
+  return selectDiverseCases(categoryFeeds, 10);
 }
 
 function buildFreeTeachingResources(input, range, relatedCases) {
@@ -540,8 +592,8 @@ module.exports = async function handler(request, response) {
   if (input.researchMode === "search") {
     try {
       const cases = await searchGoogleNewsCases(range);
-      if (cases.length < 6) {
-        sendJson(response, 502, { error: "Google 新聞目前沒有回傳足夠的近一年法律案例，請稍後再試。" });
+      if (cases.length < 10) {
+        sendJson(response, 502, { error: "Google 新聞目前沒有找到 10 則不同生活領域的法律案例，請稍後再試。" });
         return;
       }
       sendJson(response, 200, {
