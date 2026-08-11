@@ -1014,11 +1014,6 @@
       return;
     }
 
-    if (questionSlots.length > 0) {
-      showMessage("目前已有題目草稿，為避免覆蓋老師修改過的內容，請先使用「清除目前草稿」。", "error");
-      return;
-    }
-
     const hasExistingMaterial = [newsUrl.value, newsText.value, newsTitle.value, mediaName.value, publishDate.value]
       .some((value) => cleanValue(value));
     if (hasExistingMaterial && !window.confirm("將以您選取的案例取代目前新聞素材。確定要繼續嗎？")) {
@@ -1107,11 +1102,6 @@
 
     const requestedCount = Number(questionCount.value);
 
-    if (questionSlots.length > 0) {
-      showMessage("目前已有題目草稿，為避免覆蓋老師修改過的內容，不會再次產生。若要重新開始，請先使用「清除目前草稿」。", "error");
-      return;
-    }
-
     generateDraftButton.disabled = true;
     generateDraftButton.textContent = "正在產生草稿…";
     showMessage("Gemini 正在整理題目草稿，請稍候；請勿關閉頁面。", "success");
@@ -1147,9 +1137,10 @@
       const filledCount = fillGeneratedQuestions(result.questions);
       if (filledCount !== requestedCount) {
         renderQuestionSlots(0);
-        throw new Error("部分題格在產生期間已有內容，因此未覆蓋；請確認後再試一次。");
+        throw new Error("題目填入不完整，請再試一次。");
       }
 
+      renderTeachingResources(null);
       saveDraft();
       showMessage(`已填入 ${filledCount} 題 Gemini 草稿。請逐題查核事實、時效、著作權、偏誤與答案唯一性。`, "success");
       resultCard.scrollIntoView({ behavior: "smooth", block: "start" });
