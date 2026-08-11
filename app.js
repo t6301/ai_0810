@@ -3,6 +3,8 @@
 
   const form = document.querySelector("#question-form");
   const sourceButtons = [...document.querySelectorAll(".source-option")];
+  const manualMaterialChoice = document.querySelector("#manual-material-choice");
+  const manualSourcePanel = document.querySelector("#manual-source-panel");
   const urlPanel = document.querySelector("#url-panel");
   const textPanel = document.querySelector("#text-panel");
   const newsUrl = document.querySelector("#news-url");
@@ -25,6 +27,7 @@
   const clearDraftButton = document.querySelector("#clear-draft");
   const generateDraftButton = document.querySelector("#generate-draft");
   const autoLawResearchButton = document.querySelector("#auto-law-research");
+  const lawSearchLabel = document.querySelector("#law-search-label");
   const lawCaseResultsCard = document.querySelector("#law-case-results");
   const lawCaseStatus = document.querySelector("#law-case-status");
   const lawCaseList = document.querySelector("#law-case-list");
@@ -45,6 +48,7 @@
   const DRAFT_KEY = "current-event-question-draft-v1";
   const AUTH_REDIRECT_KEY = "google-auth-redirect-pending-v1";
   let sourceMode = "url";
+  let materialMode = "manual";
   let saveTimer;
   let questionSlots = [];
   let firebaseAuth = null;
@@ -191,6 +195,27 @@
     messageBox.hidden = true;
     messageBox.textContent = "";
     messageBox.className = "message-box";
+  }
+
+  function switchMaterialMode(nextMode, options = {}) {
+    const { save = true } = options;
+    materialMode = nextMode === "search" ? "search" : "manual";
+    const useSearch = materialMode === "search";
+
+    manualMaterialChoice.classList.toggle("is-selected", !useSearch);
+    manualMaterialChoice.setAttribute("aria-pressed", String(!useSearch));
+    autoLawResearchButton.classList.toggle("is-selected", useSearch);
+    autoLawResearchButton.setAttribute("aria-pressed", String(useSearch));
+    manualSourcePanel.hidden = useSearch;
+    lawCaseResultsCard.hidden = !useSearch;
+
+    if (!useSearch) {
+      manualSourcePanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    if (save) {
+      scheduleDraftSave();
+    }
   }
 
   function switchSource(nextMode, options = {}) {
@@ -822,6 +847,7 @@
     renderTeachingResources(null);
     newsUrl.value = "";
     newsText.value = "";
+    switchMaterialMode("manual", { save: false });
     switchSource("url", { focus: false, save: false });
     localStorage.removeItem(DRAFT_KEY);
     clearMessage();
@@ -930,6 +956,7 @@
 
   async function searchLawCases() {
     clearMessage();
+    switchMaterialMode("search");
 
     if (window.location.protocol === "file:") {
       showMessage("法律新聞搜尋需要從正式網站開啟；直接雙擊檔案仍可編輯、保存與列印。", "error");
@@ -938,7 +965,8 @@
 
     autoLawResearchButton.disabled = true;
     generateSelectedCaseButton.disabled = true;
-    autoLawResearchButton.textContent = "正在搜尋新聞…";
+    lawSearchLabel.textContent = "正在搜尋新聞…";
+    lawCaseStatus.textContent = "正在搜尋台灣近一年法律新聞，請稍候…";
     showMessage("Gemini 正在搜尋台灣近一年法律新聞，可能需要一些時間，請勿關閉頁面。", "success");
 
     try {
@@ -961,13 +989,14 @@
 
       renderLawCaseCandidates(result.cases, result.rangeStart, result.rangeEnd);
       showMessage(`已找到 ${lawCaseCandidates.length} 則候選新聞。請先開啟原文查核，再選擇一則案例。`, "success");
+      lawCaseResultsCard.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "法律新聞搜尋失敗，請稍後再試。";
       showMessage(message, "error");
     } finally {
       autoLawResearchButton.disabled = false;
       generateSelectedCaseButton.disabled = !selectedLawCase;
-      autoLawResearchButton.textContent = "重新搜尋近一年法律新聞";
+      lawSearchLabel.textContent = "重新搜尋一年法律新聞";
     }
   }
 
@@ -1178,6 +1207,7 @@
   sourceButtons.forEach((button) => {
     button.addEventListener("click", () => switchSource(button.dataset.source));
   });
+  manualMaterialChoice.addEventListener("click", () => switchMaterialMode("manual"));
 
   form.addEventListener("input", () => {
     clearMessage();
