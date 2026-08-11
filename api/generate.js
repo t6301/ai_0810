@@ -191,10 +191,16 @@ function validateQuestion(question) {
   );
 }
 
+function stripOptionLabel(value) {
+  return cleanText(value, 500)
+    .replace(/^\s*(?:[\(\[（【]\s*)?[A-DＡ-Ｄ]\s*(?:[\)\]）】]|[.．、:：-])\s*/i, "")
+    .trim();
+}
+
 function normalizeQuestion(question) {
   return {
     stem: cleanText(question.stem, 3000),
-    options: question.options.map((option) => cleanText(option, 500)),
+    options: question.options.map(stripOptionLabel),
     answer: question.answer,
     explanation: cleanText(question.explanation, 3000),
     source: cleanText(question.source, 1000)
@@ -337,7 +343,7 @@ function buildManualPrompt(input) {
 必須遵守：
 1. 題幹要改寫成不看原新聞也能理解的完整情境，不得逐字照抄新聞句子。
 2. 不得添加素材中沒有根據的具體事實、數字、人物或日期。
-3. 每題固定四個互不重複的選項，依序為 A、B、C、D，而且只能有一個正確答案。
+3. 每題固定四個互不重複的選項，依序為 A、B、C、D，而且只能有一個正確答案；選項文字本身不可包含 A)、B)、C)、D) 或其他選項代號。
 4. 每題提供清楚詳解，說明正確答案與其他選項不適合的原因。
 5. 每題的出處提醒必須包含「${input.mediaName}、${input.publishDate}」，可再附新聞標題與網址。
 6. 題型為題組時，各題仍須能獨立閱讀，必要時在題幹重述共同情境。
@@ -390,7 +396,7 @@ ${LAW_CURRICULUM}
 3. 涉及少年、被害人或敏感案件時，不揭露可識別個人資料，不加入血腥或煽情細節。
 
 題目規則：
-1. 產生 ${input.questionCount} 題四選一單選題；即使題型設定為題組，每題仍須能獨立理解。
+1. 產生 ${input.questionCount} 題四選一單選題；即使題型設定為題組，每題仍須能獨立理解；選項文字本身不可包含 A)、B)、C)、D) 或其他選項代號。
 2. 情境題幹須自足、改寫且不逐字抄新聞；答案只能有一個。
 3. 詳解須連結課綱概念，並說明其他選項不適合的原因；法律名稱與救濟管道要精確。
 4. 每題 source 必須寫出來源名稱、日期、標題及可查核網址。

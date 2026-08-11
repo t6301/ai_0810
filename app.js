@@ -544,7 +544,7 @@
   function getQuestionData() {
     return questionSlots.map((slot) => ({
       stem: slot.querySelector('[data-field="stem"]').value,
-      options: ["A", "B", "C", "D"].map((label) => slot.querySelector(`[data-field="option${label}"]`).value),
+      options: ["A", "B", "C", "D"].map((label) => stripOptionLabel(slot.querySelector(`[data-field="option${label}"]`).value)),
       answer: slot.querySelector('[data-field="answer"]').value,
       explanation: slot.querySelector('[data-field="explanation"]').value,
       source: slot.querySelector('[data-field="source"]').value,
@@ -568,7 +568,7 @@
       slot.querySelector('[data-field="stem"]').value = typeof question.stem === "string" ? question.stem : "";
       ["A", "B", "C", "D"].forEach((label, optionIndex) => {
         const options = Array.isArray(question.options) ? question.options : [];
-        slot.querySelector(`[data-field="option${label}"]`).value = typeof options[optionIndex] === "string" ? options[optionIndex] : "";
+        slot.querySelector(`[data-field="option${label}"]`).value = stripOptionLabel(options[optionIndex]);
       });
       slot.querySelector('[data-field="answer"]').value = typeof question.answer === "string" ? question.answer : "";
       slot.querySelector('[data-field="explanation"]').value = typeof question.explanation === "string" ? question.explanation : "";
@@ -590,6 +590,12 @@
 
   function cleanValue(value) {
     return typeof value === "string" ? value.trim() : "";
+  }
+
+  function stripOptionLabel(value) {
+    return cleanValue(value)
+      .replace(/^\s*(?:[\(\[（【]\s*)?[A-DＡ-Ｄ]\s*(?:[\)\]）】]|[.．、:：-])\s*/i, "")
+      .trim();
   }
 
   function safeExternalUrl(value) {
@@ -933,7 +939,7 @@
 
       slot.querySelector('[data-field="stem"]').value = question.stem;
       ["A", "B", "C", "D"].forEach((label, optionIndex) => {
-        slot.querySelector(`[data-field="option${label}"]`).value = question.options[optionIndex];
+        slot.querySelector(`[data-field="option${label}"]`).value = stripOptionLabel(question.options[optionIndex]);
       });
       slot.querySelector('[data-field="answer"]').value = question.answer;
       slot.querySelector('[data-field="explanation"]').value = question.explanation;
@@ -1179,7 +1185,7 @@
           <article class="print-question">
             <h2>${index + 1}. ${escapeHtml(question.stem.trim())}</h2>
             <ol class="print-options" type="A">
-              ${question.options.filter((option) => option.trim()).map((option) => `<li>${escapeHtml(option.trim())}</li>`).join("")}
+              ${question.options.filter((option) => option.trim()).map((option) => `<li>${escapeHtml(stripOptionLabel(option))}</li>`).join("")}
             </ol>
             ${isAnswerSheet ? `
               <div class="print-answer-block">
