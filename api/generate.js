@@ -148,7 +148,16 @@ function buildFreeTeachingResources(input, range, relatedCases) {
     summary: "官方法規與權利救濟入口；請老師依案例主題查閱最新規定。",
     url
   }));
-  const news = [selected, ...relatedCases.filter((item) => item.url !== selected.url)].slice(0, 4).map(normalizeResource);
+  const relatedSearch = {
+    title: `Google 新聞延伸搜尋：${selected.legalTopic || selected.title}`,
+    publisher: "Google 新聞",
+    date: range.end,
+    summary: "依案例課綱主題整理的延伸新聞搜尋入口；請老師開啟後選擇台灣媒體並查核日期與內容。",
+    url: `https://news.google.com/search?q=${encodeURIComponent(`${selected.legalTopic || selected.title} 台灣`)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`
+  };
+  const news = [selected, ...relatedCases.filter((item) => item.url !== selected.url), relatedSearch]
+    .slice(0, 4)
+    .map(normalizeResource);
   const videoQueries = [
     `${selected.legalTopic || "法律與生活"} 台灣 教學`,
     `${selected.title} 法律 新聞`
