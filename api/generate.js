@@ -1,7 +1,8 @@
 "use strict";
 
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-3.5-flash-lite";
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+const GOOGLE_NEWS_RSS = "https://news.google.com/rss/search";
 const LAW_SUBJECT = "法律與生活";
 const LAW_CURRICULUM = `一、法律概念：認識我國憲法、法律、命令的體系及其與行政、刑事、民事責任的關係；了解法院系統、訴訟與調解程序。
 二、公法與生活：理解刑法的故意、過失、阻卻違法事由、犯罪成立要件與常見犯罪；聚焦青少年網路言論、詐欺車手、校園霸凌及少年事件處理法；理解行政處分、訴願與行政訴訟。
@@ -49,6 +50,117 @@ function getResearchRange() {
 function isDateInRange(value, start, end) {
   const date = cleanText(value, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(date) && date >= start && date <= end;
+}
+
+function decodeXmlText(value) {
+  return String(value || "")
+    .replace(/^<!\[CDATA\[|\]\]>$/g, "")
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .trim();
+}
+
+function readXmlTag(block, tag) {
+  const match = block.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, "i"));
+  return match ? decodeXmlText(match[1]) : "";
+}
+
+function stripHtml(value) {
+  return cleanText(decodeXmlText(value).replace(/<[^>]*>/g, " ").replace(/\s+/g, " "), 1500);
+}
+
+function classifyLegalTopic(title) {
+  const text = cleanText(title, 500);
+  if (/勞工|工資|加班|職災|雇主|工會|勞資|打工|勞動/.test(text)) return "勞動關係法制與生活";
+  if (/少年|青少年|校園|霸凌|詐欺|車手|刑事|犯罪|警|檢/.test(text)) return "公法、刑事法律與青少年";
+  if (/消費|契約|買賣|侵權|賠償|婚姻|家庭|繼承|著作權|商標|專利/.test(text)) return "私法、消費與智慧財產";
+  return "法律概念與權利救濟";
+}
+
+function parseGoogleNewsFeed(xml, range) {
+  const items = String(xml || "").match(/<item>[\s\S]*?<\/item>/gi) || [];
+  return items.map((block) => {
+    const fullTitle = cleanText(readXmlTag(block, "title"), 500);
+    const source = cleanText(readXmlTag(block, "source"), 200);
+    const separator = fullTitle.lastIndexOf(" - ");
+    const title = separator > 0 ? fullTitle.slice(0, separator).trim() : fullTitle;
+    const publisher = source || (separator > 0 ? fullTitle.slice(separator + 3).trim() : "Google 新聞收錄媒體");
+    const url = safeHttpUrl(readXmlTag(block, "link"));
+    const published = new Date(readXmlTag(block, "pubDate"));
+    const date = Number.isNaN(published.getTime()) ? "" : formatTaiwanDate(published);
+    const description = stripHtml(readXmlTag(block, "description"));
+    const legalTopic = classifyLegalTopic(title);
+    return {
+      title,
+      publisher,
+      date,
+      summary: description && description !== fullTitle
+        ? description
+        : `此新聞可連結「${legalTopic}」課程；請開啟原文查核事件內容與法律狀態。`,
+      url,
+      legalTopic
+    };
+  }).filter((item) => item.title && item.publisher && item.url && isDateInRange(item.date, range.start, range.end));
+}
+
+async function searchGoogleNewsCases(range, customQuery = "") {
+  const queries = customQuery ? [
+    customQuery,
+    `${customQuery} 台灣 法律`,
+    `${customQuery} 權利 救濟`
+  ] : [
+    "台灣 青少年 詐欺 車手 校園霸凌 法律",
+    "台灣 勞工 打工 工資 職災 勞資爭議",
+    "台灣 消費 契約 侵權 家庭 法律",
+    "台灣 著作權 商標 網路言論 法律"
+  ];
+  const feeds = await Promise.allSettled(queries.map(async (query) => {
+    const url = `${GOOGLE_NEWS_RSS}?q=${encodeURIComponent(`${query} when:1y`)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
+    const result = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 TeacherNewsTool/1.0" } });
+    if (!result.ok) throw new Error(`Google News ${result.status}`);
+    return parseGoogleNewsFeed(await result.text(), range);
+  }));
+  const seen = new Set();
+  return feeds.flatMap((feed) => feed.status === "fulfilled" ? feed.value : []).filter((item) => {
+    const key = item.title.toLocaleLowerCase("zh-TW");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
+}
+
+function buildFreeTeachingResources(input, range, relatedCases) {
+  const selected = input.selectedCase;
+  const official = [
+    ["全國法規資料庫", "法務部", "https://law.moj.gov.tw/"],
+    ["司法院全球資訊網", "司法院", "https://www.judicial.gov.tw/tw/mp-1.html"],
+    ["勞動部全球資訊網", "勞動部", "https://www.mol.gov.tw/"],
+    ["行政院消費者保護會", "行政院", "https://cpc.ey.gov.tw/"]
+  ].map(([title, publisher, url]) => ({
+    title,
+    publisher,
+    date: range.end,
+    summary: "官方法規與權利救濟入口；請老師依案例主題查閱最新規定。",
+    url
+  }));
+  const news = [selected, ...relatedCases.filter((item) => item.url !== selected.url)].slice(0, 4).map(normalizeResource);
+  const videoQueries = [
+    `${selected.legalTopic || "法律與生活"} 台灣 教學`,
+    `${selected.title} 法律 新聞`
+  ];
+  const videos = videoQueries.map((query) => ({
+    title: `YouTube 搜尋：${query}`,
+    publisher: "YouTube",
+    date: range.end,
+    summary: "影片搜尋結果頁；請老師優先選擇政府、公共媒體或教育機構頻道並查核內容。",
+    url: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
+  }));
+  return { official, news, videos };
 }
 
 function validateQuestion(question) {
@@ -194,33 +306,9 @@ function autoResearchSchema(input) {
         },
         required: ["topic", "overview", "newsTitle", "mediaName", "publishDate", "newsUrl", "newsText"]
       },
-      questions: questionSchema(input.questionCount),
-      resources: {
-        type: "object",
-        properties: {
-          official: {
-            type: "array",
-            minItems: 2,
-            maxItems: 4,
-            items: resourceItemSchema()
-          },
-          news: {
-            type: "array",
-            minItems: 2,
-            maxItems: 4,
-            items: resourceItemSchema()
-          },
-          videos: {
-            type: "array",
-            minItems: 2,
-            maxItems: 4,
-            items: resourceItemSchema()
-          }
-        },
-        required: ["official", "news", "videos"]
-      }
+      questions: questionSchema(input.questionCount)
     },
-    required: ["lesson", "questions", "resources"]
+    required: ["lesson", "questions"]
   };
 }
 
@@ -267,7 +355,7 @@ ${LAW_CURRICULUM}
 
 function buildAutoResearchPrompt(input, range) {
   const selected = input.selectedCase;
-  return `你是協助臺灣技術型高中教師教授「法律與生活」的備課助理。老師已自行選取下列新聞，請使用 Google 搜尋查核原文並完成一份可修改的課程草稿。
+  return `你是協助臺灣技術型高中教師教授「法律與生活」的備課助理。老師已自行選取下列新聞，請只依提供的新聞資料與一般法律教育知識完成一份可修改的課程草稿。
 
 課綱：
 ${LAW_CURRICULUM}
@@ -287,15 +375,10 @@ ${LAW_CURRICULUM}
 - 題數：${input.questionCount}
 - 難度：${input.difficulty}
 
-搜尋與選材規則：
-1. 查核老師選取新聞的標題、媒體、日期、網址與事件內容，並把它改寫成單一、自足的教學情境。
-2. 法律規定與權利救濟優先引用司法院、法務部、全國法規資料庫、勞動部、行政院消保處、教育部或其他 .gov.tw 官方資料。
-3. 延伸新聞列出選取原文及 1 至 3 筆相關報導；不得虛構標題、日期或網址，也不得把延伸報導當成主要案例。
-4. YouTube 至少 2 支，優先政府機關、公共媒體、教育機構或可信法律專業頻道；網址必須是實際找到的 youtube.com/watch、youtube.com/shorts 或 youtu.be 影片，不得只放搜尋結果頁。
-5. 每個網址都必須來自本次搜尋結果並可直接開啟。無法確認的資料不要列入。
-6. 選取新聞日期須在 ${range.start} 至 ${range.end}；基礎法規頁若沒有明確日期，可填查詢日並在摘要說明是現行法規查詢頁。
-7. 不提供個案法律意見，不替法院判決；如案件仍在偵查或審理，使用「涉嫌」「檢方主張」「法院審理中」等中性文字。
-8. 涉及少年、被害人或敏感案件時，不揭露可識別個人資料，不加入血腥或煽情細節。
+內容規則：
+1. 不得聲稱已查核網址或即時新聞；把老師提供的資料改寫成單一、自足的教學情境。
+2. 不提供個案法律意見，不替法院判決；案件狀態不明時使用「新聞報導指出」「仍待查核」等中性文字。
+3. 涉及少年、被害人或敏感案件時，不揭露可識別個人資料，不加入血腥或煽情細節。
 
 題目規則：
 1. 產生 ${input.questionCount} 題四選一單選題；即使題型設定為題組，每題仍須能獨立理解。
@@ -364,7 +447,6 @@ function validateCaseSearchResult(result, range) {
 
 function validateAutoResult(result, input, range) {
   const lesson = result?.lesson;
-  const resources = result?.resources;
   return Boolean(
     lesson &&
     cleanText(lesson.topic, 500) &&
@@ -376,17 +458,7 @@ function validateAutoResult(result, input, range) {
     cleanText(lesson.newsText, 20000) &&
     Array.isArray(result.questions) &&
     result.questions.length === input.questionCount &&
-    result.questions.every(validateQuestion) &&
-    resources &&
-    Array.isArray(resources.official) &&
-    resources.official.length >= 2 &&
-    resources.official.every(validateResource) &&
-    Array.isArray(resources.news) &&
-    resources.news.length >= 2 &&
-    resources.news.every(validateResource) &&
-    Array.isArray(resources.videos) &&
-    resources.videos.length >= 2 &&
-    resources.videos.every(validateResource)
+    result.questions.every(validateQuestion)
   );
 }
 
@@ -422,12 +494,6 @@ module.exports = async function handler(request, response) {
     return;
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    sendJson(response, 503, { error: "網站尚未設定 Gemini 金鑰，請先在 Vercel 的秘密設定加入 GEMINI_API_KEY。" });
-    return;
-  }
-
   const body = request.body && typeof request.body === "object" ? request.body : {};
   const selectedCase = body.selectedCase && typeof body.selectedCase === "object" ? body.selectedCase : {};
   const input = {
@@ -456,6 +522,32 @@ module.exports = async function handler(request, response) {
 
   const range = getResearchRange();
 
+  if (input.researchMode === "search") {
+    try {
+      const cases = await searchGoogleNewsCases(range);
+      if (cases.length < 6) {
+        sendJson(response, 502, { error: "Google 新聞目前沒有回傳足夠的近一年法律案例，請稍後再試。" });
+        return;
+      }
+      sendJson(response, 200, {
+        model: "Google News RSS",
+        rangeStart: range.start,
+        rangeEnd: range.end,
+        cases
+      });
+    } catch (error) {
+      console.error("[api/generate] Google News failed", error instanceof Error ? error.message : "unknown");
+      sendJson(response, 502, { error: "目前無法讀取 Google 新聞，請稍後再試。" });
+    }
+    return;
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    sendJson(response, 503, { error: "網站尚未設定 Gemini 金鑰，請先在 Vercel 的秘密設定加入 GEMINI_API_KEY。" });
+    return;
+  }
+
   if (input.researchMode !== "search" && (!["單選", "題組"].includes(input.questionType) || ![3, 5].includes(input.questionCount) || !["基礎", "中等", "進階"].includes(input.difficulty))) {
     sendJson(response, 400, { error: "請先選擇題型、題數與難度。" });
     return;
@@ -471,18 +563,14 @@ module.exports = async function handler(request, response) {
     return;
   }
 
-  const prompt = input.researchMode === "search"
-    ? buildCaseSearchPrompt(range)
-    : (input.researchMode === "generate" ? buildAutoResearchPrompt(input, range) : buildManualPrompt(input));
-  const schema = input.researchMode === "search"
-    ? caseSearchSchema()
-    : (input.researchMode === "generate" ? autoResearchSchema(input) : manualSchema(input));
+  const prompt = input.researchMode === "generate" ? buildAutoResearchPrompt(input, range) : buildManualPrompt(input);
+  const schema = input.researchMode === "generate" ? autoResearchSchema(input) : manualSchema(input);
 
   try {
     const requestBody = {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {
-        maxOutputTokens: input.researchMode === "search" ? 12000 : (input.researchMode === "generate" ? 20000 : 8192),
+        maxOutputTokens: input.researchMode === "generate" ? 20000 : 8192,
         responseFormat: {
           text: {
             mimeType: "APPLICATION_JSON",
@@ -491,10 +579,6 @@ module.exports = async function handler(request, response) {
         }
       }
     };
-
-    if (input.researchMode !== "manual") {
-      requestBody.tools = [{ google_search: {} }];
-    }
 
     const geminiResponse = await fetch(GEMINI_ENDPOINT, {
       method: "POST",
@@ -519,48 +603,22 @@ module.exports = async function handler(request, response) {
     }
 
     const result = JSON.parse(outputText);
-    if (input.researchMode === "search") {
-      if (!validateCaseSearchResult(result, range)) {
-        sendJson(response, 502, { error: "Gemini 找到的新聞資料不完整，沒有顯示這次結果，請再搜尋一次。" });
-        return;
-      }
-
-      sendJson(response, 200, {
-        model: MODEL,
-        rangeStart: range.start,
-        rangeEnd: range.end,
-        cases: result.cases.map((item) => ({
-          title: cleanText(item.title, 500),
-          publisher: cleanText(item.publisher, 200),
-          date: cleanText(item.date, 10),
-          summary: cleanText(item.summary, 1500),
-          url: safeHttpUrl(item.url),
-          legalTopic: cleanText(item.legalTopic, 500)
-        }))
-      });
-      return;
-    }
-
     if (input.researchMode === "generate") {
       if (!validateAutoResult(result, input, range)) {
         sendJson(response, 502, { error: "Gemini 找到的案例、新聞或影片資料不完整，沒有採用這次結果，請再試一次。" });
         return;
       }
 
-      const citations = extractGroundingSources(geminiData, range.end);
-      const relatedNews = result.resources.news.map(normalizeResource);
-      if (!relatedNews.some((item) => item.url === input.selectedCase.url)) {
-        relatedNews.unshift({
-          title: input.selectedCase.title,
-          publisher: input.selectedCase.publisher,
-          date: input.selectedCase.date,
-          summary: input.selectedCase.summary,
-          url: input.selectedCase.url
-        });
+      let relatedCases = [];
+      try {
+        relatedCases = await searchGoogleNewsCases(range, `${input.selectedCase.title} ${input.selectedCase.legalTopic}`);
+      } catch {
+        relatedCases = [];
       }
+      const resources = buildFreeTeachingResources(input, range, relatedCases);
       sendJson(response, 200, {
         model: MODEL,
-        searchGrounded: citations.length > 0,
+        searchGrounded: false,
         lesson: {
           subject: LAW_SUBJECT,
           curriculumFocus: LAW_CURRICULUM,
@@ -579,10 +637,10 @@ module.exports = async function handler(request, response) {
           researchedAt: range.end,
           rangeStart: range.start,
           rangeEnd: range.end,
-          official: result.resources.official.map(normalizeResource),
-          news: relatedNews.slice(0, 5),
-          videos: result.resources.videos.map(normalizeResource),
-          citations
+          official: resources.official,
+          news: resources.news,
+          videos: resources.videos,
+          citations: []
         }
       });
       return;
