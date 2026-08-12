@@ -1,6 +1,7 @@
 "use strict";
 
 const PRODUCTION_AUTH_DOMAIN = "ai-0810.vercel.app";
+const FIREBASE_MEASUREMENT_ID = "G-YYVMN89RGZ";
 
 function sendJson(response, status, body) {
   response.status(status).setHeader("Content-Type", "application/json; charset=utf-8");
@@ -25,7 +26,8 @@ module.exports = function handler(request, response) {
     projectId: process.env.FIREBASE_PROJECT_ID,
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
     messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.FIREBASE_APP_ID
+    appId: process.env.FIREBASE_APP_ID,
+    measurementId: FIREBASE_MEASUREMENT_ID
   };
 
   if (Object.values(firebaseConfig).some((value) => !value)) {

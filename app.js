@@ -102,10 +102,11 @@
     }
 
     try {
-      const [firebaseAppSdk, loadedAuthSdk, loadedFirestoreSdk] = await Promise.all([
+      const [firebaseAppSdk, loadedAuthSdk, loadedFirestoreSdk, loadedAnalyticsSdk] = await Promise.all([
         import("https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js"),
         import("https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js"),
-        import("https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js")
+        import("https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js"),
+        import("https://www.gstatic.com/firebasejs/12.16.0/firebase-analytics.js")
       ]);
       const response = await fetch("/api/firebase-config", { cache: "no-store" });
       if (!response.ok) {
@@ -118,6 +119,9 @@
       const firebaseApp = firebaseAppSdk.initializeApp(firebaseConfig);
       firebaseAuth = loadedAuthSdk.getAuth(firebaseApp);
       firebaseDb = loadedFirestoreSdk.getFirestore(firebaseApp);
+      if (firebaseConfig.measurementId && await loadedAnalyticsSdk.isSupported()) {
+        loadedAnalyticsSdk.getAnalytics(firebaseApp);
+      }
       firebaseAuth.languageCode = "zh-TW";
       await loadedAuthSdk.setPersistence(firebaseAuth, loadedAuthSdk.browserLocalPersistence);
       loadedAuthSdk.onAuthStateChanged(firebaseAuth, updateAuthDisplay, () => {
