@@ -13,9 +13,9 @@
   <header class="site-header">
     <div class="header-inner">
       <div class="brand-block">
-        <div class="brand-mark" aria-hidden="true">題</div>
+        <div class="brand-mark" aria-hidden="true">編</div>
         <div>
-          <p class="eyebrow">高中職教師備課工具</p>
+          <p class="eyebrow">高中職教師的時事編輯檯</p>
           <h1>校園時事命題</h1>
         </div>
       </div>
@@ -30,29 +30,38 @@
   <main id="main-content" class="page-shell">
     <section class="intro-panel" aria-labelledby="intro-title">
       <div class="intro-copy">
-        <p class="eyebrow">第一步｜準備素材</p>
-        <h2 id="intro-title">把新聞整理成可檢查的題目草稿</h2>
-        <p>可以自行貼入新聞，也可以搜尋近一年法律案例；選好素材後再設定出題。所有 AI 產出都必須由老師親自查核。</p>
+        <p class="eyebrow">今日編務｜從真實事件開始</p>
+        <h2 id="intro-title">把一則新聞，編成一堂能思考的課</h2>
+        <p>貼入素材或挑選近一年法律案例，再交給 Gemini 整理成題目草稿。最後一關永遠由老師親自查核。</p>
+        <a class="intro-jump" href="#source-title">開始整理素材 <span aria-hidden="true">↓</span></a>
       </div>
-      <div class="intro-guide">
-        <svg class="hero-illustration" viewBox="0 0 320 150" role="img" aria-label="新聞、法律天平與教學燈泡插圖">
-          <circle cx="54" cy="74" r="48" fill="#f6c945"/>
-          <circle cx="272" cy="38" r="26" fill="#df3b32"/>
-          <path d="M100 26h132a18 18 0 0 1 18 18v76a18 18 0 0 1-18 18H100a18 18 0 0 1-18-18V44a18 18 0 0 1 18-18Z" fill="#fffdf5" stroke="#163f2d" stroke-width="5"/>
-          <path d="M107 51h48v42h-48z" fill="#df3b32" rx="5"/>
-          <path d="M170 54h55M170 71h55M107 108h118" stroke="#163f2d" stroke-width="7" stroke-linecap="round"/>
-          <path d="M277 69v38M251 80h52M261 80l-11 23h22Zm32 0-11 23h22Z" fill="none" stroke="#f6c945" stroke-width="5" stroke-linejoin="round"/>
-          <path d="M261 113h32" stroke="#f6c945" stroke-width="6" stroke-linecap="round"/>
-        </svg>
-        <ol class="progress-list" aria-label="使用步驟">
-          <li class="is-active"><span>1</span>放入素材</li>
-          <li><span>2</span>產生草稿</li>
-          <li><span>3</span>查核輸出</li>
-        </ol>
+      <div class="editorial-stack" aria-label="待編、出題、查核三張備課稿紙">
+        <div class="editorial-sheet editorial-sheet--back" aria-hidden="true"></div>
+        <div class="editorial-sheet editorial-sheet--middle" aria-hidden="true"></div>
+        <div class="editorial-sheet editorial-sheet--front">
+          <span class="sheet-kicker">備課工作單</span>
+          <strong>素材 → 草稿 → 查核</strong>
+          <span class="sheet-rule"></span>
+          <span class="sheet-rule sheet-rule--short"></span>
+          <span class="review-stamp">老師<br>定稿</span>
+        </div>
       </div>
     </section>
 
     <div id="message-box" class="message-box" role="status" aria-live="polite" hidden></div>
+
+    <div class="workspace-layout">
+      <nav class="workflow-rail" aria-label="命題流程">
+        <p class="workflow-title">命題流程</p>
+        <ol class="progress-list">
+          <li class="is-active"><a href="#source-title"><span>1</span><b>整理素材</b><small>貼入或搜尋新聞</small></a></li>
+          <li><a href="#settings-title"><span>2</span><b>設定出題</b><small>題型、題數、難度</small></a></li>
+          <li><a href="#result-title"><span>3</span><b>查核草稿</b><small>修改、列印、保存</small></a></li>
+        </ol>
+        <p class="rail-note">AI 負責起草<br>老師保留決定權</p>
+      </nav>
+
+      <div class="workspace-content">
 
     <form id="question-form" novalidate>
       <section class="card" aria-labelledby="source-title">
@@ -273,6 +282,9 @@
         <li>教材使用是否符合著作權規範</li>
       </ul>
     </aside>
+
+      </div>
+    </div>
 
     <section id="print-sheet" class="print-sheet" aria-label="列印內容" hidden></section>
   </main>
